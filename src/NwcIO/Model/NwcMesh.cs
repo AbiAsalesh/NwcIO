@@ -25,6 +25,9 @@ public sealed class NwcMesh
     /// <summary>Optional 3D world transformation associated with this mesh instance.</summary>
     public NwcTransform? Transform { get; set; }
 
+    /// <summary>Surface material and color assigned to this mesh.</summary>
+    public NwcMaterial? Material { get; set; }
+
     /// <summary>Number of triangle faces in this mesh.</summary>
     public int TriangleCount => Indices.Count / 3;
 
@@ -47,6 +50,12 @@ public sealed class NwcMesh
             double wx = v.X * m[0] + v.Y * m[4] + v.Z * m[8] + m[12];
             double wy = v.X * m[1] + v.Y * m[5] + v.Z * m[9] + m[13];
             double wz = v.X * m[2] + v.Y * m[6] + v.Z * m[10] + m[14];
+
+            if (!double.IsFinite(wx) || !double.IsFinite(wy) || !double.IsFinite(wz))
+            {
+                return Vertices;
+            }
+
             world[i] = new Vector3d(wx, wy, wz);
         }
 

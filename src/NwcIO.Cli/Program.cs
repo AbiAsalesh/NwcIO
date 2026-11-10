@@ -10,22 +10,24 @@ namespace NwcIO.Cli;
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd> [output.json|output.obj] [options]
+        Usage: nwcio <input.nwc|input.nwd> [output.json|output.obj|output.glb] [options]
                nwcio --help | --version
 
         Reads an Autodesk Navisworks (.nwc / .nwd) file and exports its scene tree,
-        properties, 3D transforms, metadata, and 3D polygon meshes (OBJ/JSON)
+        properties, 3D transforms, metadata, materials, and 3D polygon meshes (GLB/OBJ/JSON)
         without requiring Navisworks to be installed.
 
         Arguments:
           <input>            Path to the .nwc or .nwd file to read.
-          [output]           Destination path for the exported file (.json or .obj).
+          [output]           Destination path for the exported file (.json, .obj, or .glb).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
+          --glb <file.glb>   Export 3D geometry and materials to glTF 2.0 Binary format (GLB)
           --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
-          --local-coords     Export OBJ in local coordinate space (default: world coordinates)
+          --local-coords     Export geometry in local coordinate space (default: world coordinates)
           --no-meshes        Disable 3D mesh geometry extraction
+          --no-materials     Disable material and surface color extraction
           --catalog          Include raw container stream catalog (offsets, sizes, kinds)
           --no-transforms    Exclude 3D transform matrices from JSON export
           --no-tree          Exclude hierarchical scene graph tree from JSON export
@@ -62,8 +64,10 @@ internal static class Program
         string? inputPath = null;
         string? outputPath = null;
         string? explicitObjPath = null;
+        string? explicitGlbPath = null;
         bool worldCoords = true;
         bool readMeshes = true;
+        bool readMaterials = true;
         bool includeCatalog = false;
         bool includeTransforms = true;
         bool includeTree = true;
@@ -87,6 +91,9 @@ internal static class Program
                 case "--no-meshes":
                     readMeshes = false;
                     break;
+                case "--no-materials":
+                    readMaterials = false;
+                    break;
                 case "--local-coords":
                     worldCoords = false;
                     break;
@@ -98,6 +105,15 @@ internal static class Program
                     }
 
                     explicitObjPath = args[++i];
+                    break;
+                case "--glb":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --glb.");
+                        return 1;
+                    }
+
+                    explicitGlbPath = args[++i];
                     break;
                 case "--no-indent":
                     indent = false;
@@ -153,6 +169,7 @@ internal static class Program
             doc = NwcDocument.Open(inputPath, new NwcReaderOptions
             {
                 ReadMeshes = readMeshes,
+                ReadMaterials = readMaterials,
                 ReadPropertyRecords = true,
                 ReadGuids = true,
                 ReadTransforms = includeTransforms,
@@ -171,12 +188,18 @@ internal static class Program
             return 3;
         }
 
-        // Check if output is directly an OBJ file
+        // Check if output is directly an OBJ or GLB file
         bool outputIsObj = outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase);
+        bool outputIsGlb = outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
 
         try
         {
-            if (outputIsObj)
+            if (outputIsGlb)
+            {
+                EnsureParentDirectory(outputPath);
+                doc.SaveGlb(outputPath, worldCoords);
+            }
+            else if (outputIsObj)
             {
                 EnsureParentDirectory(outputPath);
                 doc.SaveObj(outputPath, worldCoords);
@@ -189,6 +212,7 @@ internal static class Program
                     IncludeTransforms = includeTransforms,
                     IncludeSceneTree = includeTree,
                     IncludeMeshes = readMeshes,
+                    IncludeMaterials = readMaterials,
                     IncludeStreamCatalog = includeCatalog,
                 };
 
@@ -204,7 +228,13 @@ internal static class Program
                 }
             }
 
-            // If an additional explicit --obj export was requested alongside JSON
+            // Additional explicit exports
+            if (!string.IsNullOrEmpty(explicitGlbPath))
+            {
+                EnsureParentDirectory(explicitGlbPath);
+                doc.SaveGlb(explicitGlbPath, worldCoords);
+            }
+
             if (!string.IsNullOrEmpty(explicitObjPath))
             {
                 EnsureParentDirectory(explicitObjPath);
@@ -237,8 +267,14 @@ internal static class Program
             Console.Error.WriteLine($"3D Meshes:        {doc.Meshes.Count}");
             Console.Error.WriteLine($"Vertices:         {totalVertices:N0}");
             Console.Error.WriteLine($"Triangles:        {totalTriangles:N0}");
+            Console.Error.WriteLine($"Materials:        {doc.Materials.Count}");
             Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
             Console.Error.WriteLine($"Output:           {outputPath}");
+            if (!string.IsNullOrEmpty(explicitGlbPath))
+            {
+                Console.Error.WriteLine($"GLB Output:       {explicitGlbPath}");
+            }
+
             if (!string.IsNullOrEmpty(explicitObjPath))
             {
                 Console.Error.WriteLine($"OBJ Output:       {explicitObjPath}");
@@ -247,7 +283,7 @@ internal static class Program
         else
         {
             Console.WriteLine(FormattableString.Invariant(
-                $"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs, {doc.Transforms.Count} transforms, {doc.Meshes.Count} meshes to '{outputPath}' in {sw.ElapsedMilliseconds} ms."));
+                $"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs, {doc.Transforms.Count} transforms, {doc.Meshes.Count} meshes, {doc.Materials.Count} materials to '{outputPath}' in {sw.ElapsedMilliseconds} ms."));
         }
 
         return 0;

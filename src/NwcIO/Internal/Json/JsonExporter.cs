@@ -128,6 +128,11 @@ public static class JsonExporter
                 writer.WriteString("name", mesh.Name);
                 writer.WriteNumber("vertexCount", mesh.Vertices.Count);
                 writer.WriteNumber("triangleCount", mesh.TriangleCount);
+                if (mesh.Material is not null)
+                {
+                    writer.WriteString("material", mesh.Material.Name);
+                }
+
                 if (mesh.BoundingBox is { } bbox)
                 {
                     writer.WriteStartObject("boundingBox");
@@ -144,6 +149,24 @@ public static class JsonExporter
                     writer.WriteEndObject();
                 }
 
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        writer.WriteNumber("materialCount", document.Materials.Count);
+        if (options.IncludeMaterials && document.Materials.Count > 0)
+        {
+            writer.WriteStartArray("materials");
+            foreach (var mat in document.Materials)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("id", mat.Id);
+                writer.WriteString("name", mat.Name);
+                writer.WriteString("color", mat.Color.ToHex(includeAlpha: true));
+                WriteSafeNumber(writer, "metallic", mat.Metallic);
+                WriteSafeNumber(writer, "roughness", mat.Roughness);
                 writer.WriteEndObject();
             }
 

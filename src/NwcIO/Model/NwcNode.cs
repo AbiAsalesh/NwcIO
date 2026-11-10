@@ -31,5 +31,11 @@ public sealed class NwcNode
     /// <summary>3D spatial transformation (pose and bounding box) if present.</summary>
     public NwcTransform? Transform { get; set; }
 
+    /// <summary>Material assigned to this node.</summary>
+    public NwcMaterial? Material { get; set; }
+
+    /// <summary>Associated 3D mesh geometry if this node represents a geometric element.</summary>
+    public NwcMesh? Mesh { get; set; }
+
     public override string ToString() => $"{Name} ({Class}) [Children: {Children.Count}, Props: {Properties.Count}]";
 }

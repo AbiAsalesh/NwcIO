@@ -58,6 +58,9 @@ public class RealFixtureTests
         Assert.True(firstMesh.TriangleCount >= 1);
         Assert.NotNull(firstMesh.BoundingBox);
 
+        Assert.NotEmpty(doc.Materials);
+        Assert.Contains(doc.Materials, m => m.Color != default);
+
         // Verify OBJ export
         using var sw = new StringWriter();
         doc.SaveObj(sw, worldCoordinates: true);
@@ -67,6 +70,14 @@ public class RealFixtureTests
         Assert.Contains("v ", obj);
         Assert.Contains("f ", obj);
 
+        // Verify GLB export
+        using var glbMs = new MemoryStream();
+        doc.SaveGlb(glbMs, worldCoordinates: true);
+        byte[] glbBytes = glbMs.ToArray();
+        Assert.True(glbBytes.Length > 100_000);
+        Assert.Equal(0x46546C67u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(glbBytes.AsSpan(0)));
+        Assert.Equal(2u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(glbBytes.AsSpan(4)));
+
         // Verify JSON export
         string json = doc.ToJson(new NwcJsonExportOptions
         {
@@ -74,6 +85,7 @@ public class RealFixtureTests
             IncludeTransforms = true,
             IncludeSceneTree = true,
             IncludeMeshes = true,
+            IncludeMaterials = true,
             IncludeStreamCatalog = true,
         });
         Assert.NotEmpty(json);
@@ -90,6 +102,10 @@ public class RealFixtureTests
         Assert.Equal(doc.Transforms.Count, transformsEl.GetArrayLength());
         Assert.True(root.TryGetProperty("meshCount", out var meshCountEl));
         Assert.Equal(doc.Meshes.Count, meshCountEl.GetInt32());
+        Assert.True(root.TryGetProperty("materialCount", out var matCountEl));
+        Assert.Equal(doc.Materials.Count, matCountEl.GetInt32());
+        Assert.True(root.TryGetProperty("materials", out var matsEl));
+        Assert.Equal(doc.Materials.Count, matsEl.GetArrayLength());
         Assert.True(root.TryGetProperty("meshes", out var meshesEl));
         Assert.Equal(doc.Meshes.Count, meshesEl.GetArrayLength());
         Assert.True(root.TryGetProperty("sceneTree", out var sceneTreeEl));

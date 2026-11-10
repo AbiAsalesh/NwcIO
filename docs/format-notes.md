@@ -109,5 +109,16 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Linear wire elements (e.g. rebar centerlines, grid axes) are indicated when `vCount = 2`.
 
 ### 2.7 DB Cache (`DbCache`) & XRef JSON (`XRefJson`)
-- **DbCache**: Header `LcOpDBCache`, contains embedded metadata and product cache.
+- **DbCache**: Header `LcOpDBCache`, contains embedded product registry and subsystem metadata (`LcOpNwdGeometry`, `LcOpNwdLogicalHierarchy`, `LcOpGuidStore`, etc.).
 - **XRef JSON**: UTF-8 JSON snippet starting with `{"Type":"XRefTable", ...}` storing external cross-references.
+
+### 2.8 Materials, RGBA Colors & glTF 2.0 (GLB)
+- **Material Records**:
+  - `LcRevitElement` with prefix `Material "Name", #ElementId`: defines material instances.
+  - `revit_Color` with property `Color`: stores comma-separated `"R, G, B"` integer triples in $0..255$ range (e.g. `"255, 128, 0"`, `"0, 255, 255"`).
+  - Material parameters in elements (`ADSK_Материал`, `Материал`, `ADSK_Основной материал элемента`): link elements to material names.
+- **glTF 2.0 Binary Container (`.glb`)**:
+  - 12-byte header: magic `0x46546C67` (`glTF`), version 2, total byte length.
+  - Chunk 0: JSON metadata padded with `0x20` space bytes to 4-byte alignment.
+  - Chunk 1: Binary buffer (`BIN\0`, `0x004E4942`) padded with `0x00` bytes to 4-byte alignment.
+  - Packed buffers include `POSITION` (VEC3 float), `NORMAL` (VEC3 computed smooth/flat normals), `indices` (SCALAR uint16/uint32), and PBR materials with `baseColorFactor`, `metallicFactor`, `roughnessFactor`.

@@ -15,6 +15,7 @@ public sealed class NwcDocument
         IReadOnlyList<Guid> guids,
         IReadOnlyList<NwcTransform> transforms,
         IReadOnlyList<NwcMesh> meshes,
+        IReadOnlyList<NwcMaterial> materials,
         NwcNode? rootNode,
         NwcContainer container)
     {
@@ -23,6 +24,7 @@ public sealed class NwcDocument
         Guids = guids;
         Transforms = transforms;
         Meshes = meshes;
+        Materials = materials;
         RootNode = rootNode;
         Container = container;
     }
@@ -40,6 +42,9 @@ public sealed class NwcDocument
 
     /// <summary>3D polygon meshes extracted from geometry streams and TOC tables.</summary>
     public IReadOnlyList<NwcMesh> Meshes { get; }
+
+    /// <summary>Surface materials, RGBA colors and PBR properties extracted from properties and categories.</summary>
+    public IReadOnlyList<NwcMaterial> Materials { get; }
 
     /// <summary>Root of the hierarchical scene graph tree (matching Navisworks selection tree).</summary>
     public NwcNode? RootNode { get; }
@@ -112,12 +117,18 @@ public sealed class NwcDocument
             rootNode = SceneTreeBuilder.Build(rootName, records, transforms, guids);
         }
 
+        var materials = new List<NwcMaterial>();
+        if (options.ReadMaterials)
+        {
+            materials.AddRange(MaterialParser.Parse(records, meshes, rootNode));
+        }
+
         if (!options.KeepStreamCatalog)
         {
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, transforms, meshes, rootNode, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, container);
     }
 
     /// <summary>Exports 3D mesh geometry to a Wavefront OBJ file.</summary>
@@ -130,6 +141,18 @@ public sealed class NwcDocument
     public void SaveObj(TextWriter writer, bool worldCoordinates = true)
     {
         Internal.Export.ObjExporter.Write(Meshes, writer, worldCoordinates, FileInfo.SourcePath);
+    }
+
+    /// <summary>Exports 3D mesh geometry, materials, and scene hierarchy to a binary glTF 2.0 file (.glb).</summary>
+    public void SaveGlb(string path, bool worldCoordinates = true)
+    {
+        Internal.Export.GlbExporter.WriteFile(Meshes, Materials, path, worldCoordinates, FileInfo.LoaderPlugin);
+    }
+
+    /// <summary>Exports 3D mesh geometry, materials, and scene hierarchy to a binary glTF 2.0 stream (.glb).</summary>
+    public void SaveGlb(Stream stream, bool worldCoordinates = true)
+    {
+        Internal.Export.GlbExporter.Write(Meshes, Materials, stream, worldCoordinates, FileInfo.LoaderPlugin);
     }
 
     /// <summary>Exports the document to a JSON file.</summary>

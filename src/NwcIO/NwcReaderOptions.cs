@@ -20,6 +20,9 @@ public sealed class NwcReaderOptions
     /// <summary>Parse 3D meshes from geometry streams (default: true).</summary>
     public bool ReadMeshes { get; set; } = true;
 
+    /// <summary>Extract materials, RGBA colors, and surface parameters (default: true).</summary>
+    public bool ReadMaterials { get; set; } = true;
+
     /// <summary>Keep the stream catalog (offsets, sizes, kinds) in the document (default: true).</summary>
     public bool KeepStreamCatalog { get; set; } = true;
 }
