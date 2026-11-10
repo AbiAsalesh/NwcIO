@@ -195,6 +195,33 @@ public class RealFixtureTests
             if (File.Exists(tempIfc)) File.Delete(tempIfc);
         }
 
+        // Step 4: Verify IFC4 export with modern IfcTriangulatedFaceSet and Types
+        string tempIfc4 = Path.Combine(Path.GetTempPath(), $"fixture_ifc4_{Guid.NewGuid():N}.ifc");
+        try
+        {
+            doc.SaveIfc(tempIfc4, new NwcIfcExportOptions
+            {
+                SchemaVersion = NwcIfcSchemaVersion.Ifc4,
+                ExportTypeObjects = true,
+                UseTessellationInIfc4 = true,
+            });
+            Assert.True(File.Exists(tempIfc4));
+            var ifc4Info = new FileInfo(tempIfc4);
+            Assert.True(ifc4Info.Length > 50_000, $"Expected IFC4 file > 50KB, got {ifc4Info.Length} bytes");
+
+            string ifc4Header = File.ReadLines(tempIfc4).Take(30).Aggregate((a, b) => a + "\n" + b);
+            Assert.Contains("FILE_SCHEMA(('IFC4'));", ifc4Header);
+            Assert.Contains("DesignTransferView", ifc4Header);
+
+            string sample = File.ReadLines(tempIfc4).Skip(30).Take(200).Aggregate((a, b) => a + "\n" + b);
+            Assert.Contains("IFCCARTESIANPOINTLIST3D(", sample);
+            Assert.Contains("IFCTRIANGULATEDFACESET(", sample);
+        }
+        finally
+        {
+            if (File.Exists(tempIfc4)) File.Delete(tempIfc4);
+        }
+
         // Milestone 5: Verify Multi-Model Assembly
         var fixture2 = @"sample_mep.nwc";
         if (File.Exists(fixture2))

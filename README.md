@@ -13,7 +13,7 @@ Built clean-room following the architectural principles of [mahach666/RvtIO](htt
 ## What It Does
 
 - **Container Decompression**: Direct byte-stream parsing of `#LcUStream-V1.1` containers, continuous zlib decompression (`lichunk-008`, `lizlib`), and checksum gap framing without third-party libraries.
-- **Industry Foundation Classes (IFC2x3)**: Pure managed exporter generating ISO 10303-21 STEP physical files compliant with IFC2x3 Coordination View V2.0 (`IfcFacetedBrep`, `IfcClosedShell`, `IfcFace`, `IfcPolyLoop`, `IfcCartesianPoint`), spatial hierarchy (`IfcProject`, `IfcSite`, `IfcBuilding`, `IfcBuildingStorey`), element mapping (`IfcWall`, `IfcSlab`, `IfcColumn`, `IfcBeam`, `IfcReinforcingBar`, etc.), surface styles (`IfcSurfaceStyle`, `IfcColourRgb`), property sets (`IfcPropertySet`, `IfcPropertySingleValue`), and buildingSMART 22-character GUID encoding.
+- **Industry Foundation Classes (IFC2x3 & IFC4)**: Pure managed exporter generating ISO 10303-21 STEP physical files compliant with **IFC2x3 Coordination View V2.0** (`IfcFacetedBrep`, `IfcClosedShell`, `IfcFace`, `IfcPolyLoop`, `IfcCartesianPoint`) and modern **IFC4 Design Transfer / Reference View** with compact mesh tessellation (`IfcTriangulatedFaceSet`, `IfcCartesianPointList3D`) reducing file sizes by over 60%, spatial hierarchy (`IfcProject`, `IfcSite`, `IfcBuilding`, `IfcBuildingStorey`), element mapping (`IfcWall`, `IfcSlab`, `IfcColumn`, `IfcBeam`, `IfcReinforcingBar`, etc.), type product definitions (`IfcWallType`, `IfcSlabType`, `IfcColumnType`, `IfcReinforcingBarType`, etc. linked via `IfcRelDefinesByType`), surface styles (`IfcSurfaceStyle`, `IfcColourRgb`), property sets (`IfcPropertySet`, `IfcPropertySingleValue`), and buildingSMART 22-character GUID encoding.
 - **Hierarchical Scene Graph**: Reconstructs Navisworks selection tree (Model &rarr; Layers &rarr; Categories &rarr; Families &rarr; Types &rarr; Composite Elements &rarr; Geometry) with bound parameters and GUIDs.
 - **3D Spatial Transforms**: Decodes instance poses (double-precision translation vectors, unit rotation quaternions, local AABB bounding boxes) and generates analytic $4\times 4$ affine transformation matrices.
 - **3D Polygon Meshes**: Reads geometry chunk streams via TOC (Table of Contents), unpacks IEEE 754 vertices, converts `TRIANGLE_STRIP` buffers with alternating normal windings, and transforms vertices to world coordinates.
@@ -49,14 +49,20 @@ The library targets **.NET 8** and **.NET 10**. It is 100% managed code with zer
 
 ## Command Line (`nwcio`)
 
-### Export to Industry Foundation Classes (IFC2x3)
+### Export to Industry Foundation Classes (IFC2x3 & IFC4)
 
 ```sh
-# Export directly to IFC (Coordination View V2.0, Faceted BRep, Materials, Property Sets)
+# Export directly to IFC2x3 (Coordination View V2.0, Faceted BRep, Materials, Property Sets)
 nwcio model.nwc model.ifc
 
+# Export to modern compact IFC4 with IfcTriangulatedFaceSet and Type Objects
+nwcio model.nwc model.ifc --ifc-schema IFC4
+
+# Export without IFC type product definitions
+nwcio model.nwc model.ifc --no-types
+
 # Export with summary report to stderr
-nwcio model.nwc model.ifc --report
+nwcio model.nwc model.ifc --ifc-schema IFC4 --report
 ```
 
 ### Export to Binary glTF 2.0 (GLB)
@@ -148,8 +154,14 @@ Console.WriteLine($"Materials:    {doc.Materials.Count}");
 Console.WriteLine($"GUIDs:        {doc.Guids.Count}");
 Console.WriteLine($"Transforms:   {doc.Transforms.Count}");
 
-// Export directly to IFC, GLB, OBJ, or JSON
-doc.SaveIfc("model.ifc");
+// Export directly to IFC2x3, IFC4, GLB, OBJ, or JSON
+doc.SaveIfc("model.ifc"); // Default IFC2x3
+doc.SaveIfc("model_ifc4.ifc", new NwcIfcExportOptions
+{
+    SchemaVersion = NwcIfcSchemaVersion.Ifc4,
+    ExportTypeObjects = true,
+    UseTessellationInIfc4 = true,
+});
 doc.SaveGlb("model.glb", worldCoordinates: true);
 doc.SaveObj("model.obj", worldCoordinates: true);
 doc.SaveJson("model.json");

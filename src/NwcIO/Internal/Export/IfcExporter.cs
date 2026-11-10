@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using NwcIO.Model;
 
 namespace NwcIO.Internal.Export;
@@ -114,8 +115,16 @@ internal static class IfcExporter
         }
 
         // 5. Export Meshes as IFC Products
+        bool isIfc4 = options.SchemaVersion == NwcIfcSchemaVersion.Ifc4;
+        bool useTessellation = isIfc4 && options.UseTessellationInIfc4;
+        string schemaName = isIfc4 ? "IFC4" : "IFC2X3";
+        string viewDef = isIfc4 ? "ViewDefinition [DesignTransferView_1.0]" : "ViewDefinition [CoordinationView_V2.0]";
+
         double scale = (options.LengthUnit == NwcIfcLengthUnit.Metre && options.ConvertMmToMetres) ? 0.001 : 1.0;
         var elementIds = new List<int>(doc.Meshes.Count);
+
+        var typeMap = new Dictionary<string, (int TypeId, List<int> ElementIds)>(StringComparer.OrdinalIgnoreCase);
+        int typeIdSeed = 1000;
 
         for (int m = 0; m < doc.Meshes.Count; m++)
         {
@@ -133,16 +142,27 @@ internal static class IfcExporter
                 styleId = GetOrCreateSurfaceStyle(w, mesh.Material, styleCache);
             }
 
-            // Brep Geometry
-            int brepId = WriteMeshFacetedBrep(w, vertices, mesh.Indices, scale, options.SharedVertices);
+            // Geometry: Tessellation for IFC4, Brep for IFC2x3
+            int geomId;
+            string repType;
+            if (useTessellation)
+            {
+                geomId = WriteMeshTriangulatedFaceSet(w, vertices, mesh.Indices, scale);
+                repType = "Tessellation";
+            }
+            else
+            {
+                geomId = WriteMeshFacetedBrep(w, vertices, mesh.Indices, scale, options.SharedVertices);
+                repType = "Brep";
+            }
 
             if (styleId.HasValue)
             {
-                w.Add("IFCSTYLEDITEM", $"{StepWriter.Ref(brepId)},({StepWriter.Ref(styleId.Value)}),{StepWriter.Str(mesh.Material?.Name)}");
+                w.Add("IFCSTYLEDITEM", $"{StepWriter.Ref(geomId)},({StepWriter.Ref(styleId.Value)}),{StepWriter.Str(mesh.Material?.Name)}");
             }
 
             int shapeRepId = w.Add("IFCSHAPEREPRESENTATION",
-                $"{StepWriter.Ref(bodySubContextId)},'Body','Brep',({StepWriter.Ref(brepId)})");
+                $"{StepWriter.Ref(bodySubContextId)},'Body',{StepWriter.Str(repType)},({StepWriter.Ref(geomId)})");
             int prodShapeId = w.Add("IFCPRODUCTDEFINITIONSHAPE",
                 $"$,$,({StepWriter.Ref(shapeRepId)})");
 
@@ -156,6 +176,21 @@ internal static class IfcExporter
             int elemId = AddIfcProduct(w, ifcType, elemGuid, ownerHistoryId, elemName, elemPlacementId, prodShapeId, mesh.Id.ToString(CultureInfo.InvariantCulture));
             elementIds.Add(elemId);
 
+            // Type assignment
+            if (options.ExportTypeObjects)
+            {
+                string typeName = CleanTypeName(elemName, mesh.Material?.Name, ifcType);
+                string typeKey = $"{ifcType}::{typeName}";
+                if (!typeMap.TryGetValue(typeKey, out var entry))
+                {
+                    string typeGuid = IfcGuid.FromElementId(typeIdSeed++, "IfcType");
+                    int typeId = AddIfcTypeProduct(w, ifcType, typeGuid, ownerHistoryId, typeName, isIfc4);
+                    entry = (typeId, new List<int>());
+                    typeMap[typeKey] = entry;
+                }
+                entry.ElementIds.Add(elemId);
+            }
+
             // Export properties if requested
             if (options.ExportProperties)
             {
@@ -163,15 +198,28 @@ internal static class IfcExporter
             }
         }
 
-        // 6. Spatial Containment
+        // 6. Type Definitions
+        if (options.ExportTypeObjects)
+        {
+            foreach (var (_, (typeId, elemIds)) in typeMap)
+            {
+                if (elemIds.Count > 0)
+                {
+                    w.Add("IFCRELDEFINESBYTYPE",
+                        $"{StepWriter.Str(IfcGuid.NewGuid())},{StepWriter.Ref(ownerHistoryId)},$,$,{StepWriter.List(elemIds.Select(StepWriter.Ref))},{StepWriter.Ref(typeId)}");
+                }
+            }
+        }
+
+        // 7. Spatial Containment
         if (elementIds.Count > 0)
         {
             w.Add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
                 $"{StepWriter.Str(IfcGuid.NewGuid())},{StepWriter.Ref(ownerHistoryId)},$,$,{StepWriter.List(elementIds.Select(StepWriter.Ref))},{StepWriter.Ref(storeyId)}");
         }
 
-        // 7. Write complete STEP physical file
-        w.WriteTo(writer, fileName, options.Schema, "ViewDefinition [CoordinationView_V2.0]", options.Application, options.Organization);
+        // 8. Write complete STEP physical file
+        w.WriteTo(writer, fileName, schemaName, viewDef, options.Application, options.Organization);
     }
 
     /// <summary>Writes a federated <see cref="NwcAssembly"/> to an IFC file.</summary>
@@ -268,8 +316,16 @@ internal static class IfcExporter
         }
 
         // 5. Storeys per Model or Global Storey
+        bool isIfc4 = options.SchemaVersion == NwcIfcSchemaVersion.Ifc4;
+        bool useTessellation = isIfc4 && options.UseTessellationInIfc4;
+        string schemaName = isIfc4 ? "IFC4" : "IFC2X3";
+        string viewDef = isIfc4 ? "ViewDefinition [DesignTransferView_1.0]" : "ViewDefinition [CoordinationView_V2.0]";
+
         double scale = (options.LengthUnit == NwcIfcLengthUnit.Metre && options.ConvertMmToMetres) ? 0.001 : 1.0;
         var storeyIds = new List<int>();
+
+        var typeMap = new Dictionary<string, (int TypeId, List<int> ElementIds)>(StringComparer.OrdinalIgnoreCase);
+        int typeIdSeed = 5000;
 
         for (int modelIdx = 0; modelIdx < assembly.Models.Count; modelIdx++)
         {
@@ -300,15 +356,26 @@ internal static class IfcExporter
                     styleId = GetOrCreateSurfaceStyle(w, mesh.Material, styleCache);
                 }
 
-                int brepId = WriteMeshFacetedBrep(w, vertices, mesh.Indices, scale, options.SharedVertices);
+                int geomId;
+                string repType;
+                if (useTessellation)
+                {
+                    geomId = WriteMeshTriangulatedFaceSet(w, vertices, mesh.Indices, scale);
+                    repType = "Tessellation";
+                }
+                else
+                {
+                    geomId = WriteMeshFacetedBrep(w, vertices, mesh.Indices, scale, options.SharedVertices);
+                    repType = "Brep";
+                }
 
                 if (styleId.HasValue)
                 {
-                    w.Add("IFCSTYLEDITEM", $"{StepWriter.Ref(brepId)},({StepWriter.Ref(styleId.Value)}),{StepWriter.Str(mesh.Material?.Name)}");
+                    w.Add("IFCSTYLEDITEM", $"{StepWriter.Ref(geomId)},({StepWriter.Ref(styleId.Value)}),{StepWriter.Str(mesh.Material?.Name)}");
                 }
 
                 int shapeRepId = w.Add("IFCSHAPEREPRESENTATION",
-                    $"{StepWriter.Ref(bodySubContextId)},'Body','Brep',({StepWriter.Ref(brepId)})");
+                    $"{StepWriter.Ref(bodySubContextId)},'Body',{StepWriter.Str(repType)},({StepWriter.Ref(geomId)})");
                 int prodShapeId = w.Add("IFCPRODUCTDEFINITIONSHAPE",
                     $"$,$,({StepWriter.Ref(shapeRepId)})");
 
@@ -321,6 +388,21 @@ internal static class IfcExporter
 
                 int elemId = AddIfcProduct(w, ifcType, elemGuid, ownerHistoryId, elemName, elemPlacementId, prodShapeId, mesh.Id.ToString(CultureInfo.InvariantCulture));
                 modelElementIds.Add(elemId);
+
+                // Type assignment
+                if (options.ExportTypeObjects)
+                {
+                    string typeName = CleanTypeName(elemName, mesh.Material?.Name, ifcType);
+                    string typeKey = $"{ifcType}::{typeName}";
+                    if (!typeMap.TryGetValue(typeKey, out var entry))
+                    {
+                        string typeGuid = IfcGuid.FromElementId(typeIdSeed++, "IfcType");
+                        int typeId = AddIfcTypeProduct(w, ifcType, typeGuid, ownerHistoryId, typeName, isIfc4);
+                        entry = (typeId, new List<int>());
+                        typeMap[typeKey] = entry;
+                    }
+                    entry.ElementIds.Add(elemId);
+                }
 
                 if (options.ExportProperties)
                 {
@@ -335,13 +417,25 @@ internal static class IfcExporter
             }
         }
 
+        if (options.ExportTypeObjects)
+        {
+            foreach (var (_, (typeId, elemIds)) in typeMap)
+            {
+                if (elemIds.Count > 0)
+                {
+                    w.Add("IFCRELDEFINESBYTYPE",
+                        $"{StepWriter.Str(IfcGuid.NewGuid())},{StepWriter.Ref(ownerHistoryId)},$,$,{StepWriter.List(elemIds.Select(StepWriter.Ref))},{StepWriter.Ref(typeId)}");
+                }
+            }
+        }
+
         if (storeyIds.Count > 0)
         {
             w.Add("IFCRELAGGREGATES",
                 $"{StepWriter.Str(IfcGuid.NewGuid())},{StepWriter.Ref(ownerHistoryId)},$,$,{StepWriter.Ref(buildingId)},{StepWriter.List(storeyIds.Select(StepWriter.Ref))}");
         }
 
-        w.WriteTo(writer, fileName, options.Schema, "ViewDefinition [CoordinationView_V2.0]", options.Application, options.Organization);
+        w.WriteTo(writer, fileName, schemaName, viewDef, options.Application, options.Organization);
     }
 
     private static int WriteMeshFacetedBrep(
@@ -537,6 +631,121 @@ internal static class IfcExporter
             return "IFCDUCTSEGMENT";
 
         return "IFCBUILDINGELEMENTPROXY";
+    }
+
+    private static int WriteMeshTriangulatedFaceSet(
+        StepWriter w,
+        IReadOnlyList<Vector3d> vertices,
+        IReadOnlyList<int> indices,
+        double scale)
+    {
+        // 1. Build IFCCARTESIANPOINTLIST3D
+        var sbPoints = new StringBuilder(vertices.Count * 28 + 32);
+        sbPoints.Append('(');
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            if (i > 0) sbPoints.Append(',');
+            var v = vertices[i];
+            sbPoints.Append('(');
+            sbPoints.Append(StepWriter.Real(v.X * scale));
+            sbPoints.Append(',');
+            sbPoints.Append(StepWriter.Real(v.Y * scale));
+            sbPoints.Append(',');
+            sbPoints.Append(StepWriter.Real(v.Z * scale));
+            sbPoints.Append(')');
+        }
+        sbPoints.Append(')');
+        int pointListId = w.Add("IFCCARTESIANPOINTLIST3D", sbPoints.ToString());
+
+        // 2. Build IFCTRIANGULATEDFACESET with 1-based index triples
+        var sbIndices = new StringBuilder((indices.Count / 3) * 16 + 32);
+        sbIndices.Append('(');
+        bool firstFace = true;
+        for (int i = 0; i <= indices.Count - 3; i += 3)
+        {
+            int i0 = indices[i];
+            int i1 = indices[i + 1];
+            int i2 = indices[i + 2];
+            if ((uint)i0 >= (uint)vertices.Count || (uint)i1 >= (uint)vertices.Count || (uint)i2 >= (uint)vertices.Count)
+            {
+                continue;
+            }
+
+            if (!firstFace) sbIndices.Append(',');
+            firstFace = false;
+
+            sbIndices.Append('(');
+            sbIndices.Append(i0 + 1);
+            sbIndices.Append(',');
+            sbIndices.Append(i1 + 1);
+            sbIndices.Append(',');
+            sbIndices.Append(i2 + 1);
+            sbIndices.Append(')');
+        }
+        sbIndices.Append(')');
+
+        return w.Add("IFCTRIANGULATEDFACESET", $"{StepWriter.Ref(pointListId)},$,.T.,{sbIndices},$");
+    }
+
+    private static int AddIfcTypeProduct(
+        StepWriter w,
+        string ifcType,
+        string guid,
+        int ownerHistoryId,
+        string name,
+        bool isIfc4)
+    {
+        // Attributes in order for IfcElementType and subtypes:
+        // 1: GlobalId, 2: OwnerHistory, 3: Name, 4: Description, 5: ApplicableOccurrence,
+        // 6: HasPropertySets, 7: RepresentationMaps, 8: Tag, 9: ElementType, 10: PredefinedType
+        string prefix = $"{StepWriter.Str(guid)},{StepWriter.Ref(ownerHistoryId)},{StepWriter.Str(name)},$,$,$,$,$,$";
+
+        return ifcType switch
+        {
+            "IFCWALL" => w.Add("IFCWALLTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCSLAB" => w.Add("IFCSLABTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCCOLUMN" => w.Add("IFCCOLUMNTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCBEAM" => w.Add("IFCBEAMTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCFOOTING" => isIfc4
+                ? w.Add("IFCFOOTINGTYPE", $"{prefix},.NOTDEFINED.")
+                : w.Add("IFCBUILDINGELEMENTPROXYTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCRAILING" => w.Add("IFCRAILINGTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCROOF" => w.Add("IFCROOFTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCSTAIR" => w.Add("IFCSTAIRFLIGHTTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCPIPESEGMENT" => w.Add("IFCPIPESEGMENTTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCDUCTSEGMENT" => w.Add("IFCDUCTSEGMENTTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCREINFORCINGBAR" => isIfc4
+                ? w.Add("IFCREINFORCINGBARTYPE", $"{prefix},.NOTDEFINED.")
+                : w.Add("IFCBUILDINGELEMENTPROXYTYPE", $"{prefix},.NOTDEFINED."),
+            "IFCWINDOW" => isIfc4
+                ? w.Add("IFCWINDOWTYPE", $"{prefix},.NOTDEFINED.")
+                : w.Add("IFCWINDOWSTYLE", $"{StepWriter.Str(guid)},{StepWriter.Ref(ownerHistoryId)},{StepWriter.Str(name)},$,$,$,$,$,.NOTDEFINED.,.NOTDEFINED.,.F.,.F."),
+            "IFCDOOR" => isIfc4
+                ? w.Add("IFCDOORTYPE", $"{prefix},.NOTDEFINED.")
+                : w.Add("IFCDOORSTYLE", $"{StepWriter.Str(guid)},{StepWriter.Ref(ownerHistoryId)},{StepWriter.Str(name)},$,$,$,$,$,.NOTDEFINED.,.NOTDEFINED.,.F.,.F."),
+            _ => w.Add("IFCBUILDINGELEMENTPROXYTYPE", $"{prefix},.NOTDEFINED."),
+        };
+    }
+
+    private static string CleanTypeName(string elemName, string? matName, string ifcType)
+    {
+        if (!string.IsNullOrWhiteSpace(matName))
+        {
+            return matName.Trim();
+        }
+
+        if (elemName.StartsWith("Mesh_", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{ifcType.Replace("IFC", "", StringComparison.OrdinalIgnoreCase)} Type";
+        }
+
+        int bracketIdx = elemName.IndexOf('[');
+        if (bracketIdx > 0)
+        {
+            return elemName[..bracketIdx].Trim();
+        }
+
+        return elemName.Trim();
     }
 
     private static bool ContainsAny(string text, params string[] needles)

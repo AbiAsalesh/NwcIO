@@ -24,7 +24,9 @@ internal static class Program
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
-          --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC2x3 Coordination View
+          --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC (IFC2x3 / IFC4)
+          --ifc-schema <schema> Target IFC schema: IFC2X3 (default) or IFC4 (Tessellation)
+          --no-types         Exclude IFC type product definitions (IfcTypeProduct)
           --glb <file.glb>   Export 3D geometry and materials to glTF 2.0 Binary format (GLB)
           --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
           --bcf <file.bcfzip> Export cross-model clashes to buildingSMART BCF 2.1 zip archive
@@ -79,6 +81,8 @@ internal static class Program
         string? explicitViewpointsBcfPath = null;
         string? explicitClashHtmlPath = null;
         string? raycastArg = null;
+        NwcIfcSchemaVersion ifcSchema = NwcIfcSchemaVersion.Ifc2x3;
+        bool exportIfcTypes = true;
         bool checkClashes = false;
         bool listViewpoints = false;
         bool bvhStats = false;
@@ -135,6 +139,30 @@ internal static class Program
                         return 1;
                     }
                     explicitIfcPath = args[++i];
+                    break;
+                case "--ifc-schema":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --ifc-schema.");
+                        return 1;
+                    }
+                    string schemaStr = args[++i];
+                    if (schemaStr.Equals("IFC4", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ifcSchema = NwcIfcSchemaVersion.Ifc4;
+                    }
+                    else if (schemaStr.Equals("IFC2X3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ifcSchema = NwcIfcSchemaVersion.Ifc2x3;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"Error: Invalid IFC schema '{schemaStr}'. Expected 'IFC2X3' or 'IFC4'.");
+                        return 1;
+                    }
+                    break;
+                case "--no-types":
+                    exportIfcTypes = false;
                     break;
                 case "--obj":
                     if (i + 1 >= args.Length)
@@ -229,13 +257,21 @@ internal static class Program
 
         var sw = Stopwatch.StartNew();
 
+        var ifcExportOptions = new NwcIfcExportOptions
+        {
+            SchemaVersion = ifcSchema,
+            ExportTypeObjects = exportIfcTypes,
+            WorldCoordinates = worldCoords,
+            ExportMaterials = readMaterials,
+        };
+
         // Handle multi-model directory assembly
         if (isDirectory)
         {
             return ProcessAssemblyDirectory(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
                 explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
-                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, sw);
+                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, ifcExportOptions, sw);
         }
 
         // Handle NWF assembly file
@@ -244,7 +280,7 @@ internal static class Program
             return ProcessNwfAssembly(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
                 explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
-                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, sw);
+                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, ifcExportOptions, sw);
         }
 
         // Single NWC/NWD document
@@ -299,7 +335,7 @@ internal static class Program
             else if (outputIsIfc)
             {
                 EnsureParentDirectory(outputPath);
-                doc.SaveIfc(outputPath);
+                doc.SaveIfc(outputPath, ifcExportOptions);
             }
             else if (outputIsGlb)
             {
@@ -338,7 +374,7 @@ internal static class Program
             if (!string.IsNullOrEmpty(explicitIfcPath))
             {
                 EnsureParentDirectory(explicitIfcPath);
-                doc.SaveIfc(explicitIfcPath);
+                doc.SaveIfc(explicitIfcPath, ifcExportOptions);
             }
 
             if (!string.IsNullOrEmpty(explicitGlbPath))
@@ -452,6 +488,7 @@ internal static class Program
         string? raycastArg,
         bool printReport,
         bool indent,
+        NwcIfcExportOptions ifcOptions,
         Stopwatch sw)
     {
         outputPath ??= Path.Combine(dirPath, Path.GetFileName(dirPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + "_assembly.glb");
@@ -485,7 +522,7 @@ internal static class Program
         else if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
         {
             EnsureParentDirectory(outputPath);
-            assembly.SaveIfc(outputPath);
+            assembly.SaveIfc(outputPath, ifcOptions);
         }
         else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
@@ -503,7 +540,7 @@ internal static class Program
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
-        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath); }
+        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath, ifcOptions); }
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
@@ -568,6 +605,7 @@ internal static class Program
         string? raycastArg,
         bool printReport,
         bool indent,
+        NwcIfcExportOptions ifcOptions,
         Stopwatch sw)
     {
         outputPath ??= Path.ChangeExtension(nwfPath, ".glb");
@@ -600,7 +638,7 @@ internal static class Program
         else if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
         {
             EnsureParentDirectory(outputPath);
-            assembly.SaveIfc(outputPath);
+            assembly.SaveIfc(outputPath, ifcOptions);
         }
         else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
@@ -618,7 +656,7 @@ internal static class Program
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
-        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath); }
+        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath, ifcOptions); }
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }

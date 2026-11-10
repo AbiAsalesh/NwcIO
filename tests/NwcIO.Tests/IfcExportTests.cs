@@ -235,4 +235,72 @@ public class IfcExportTests
         Assert.Contains("IFCCLOSEDSHELL(", ifc);
         Assert.Contains("END-ISO-10303-21;", ifc);
     }
+
+    [Fact]
+    public void SaveIfc_Ifc4Schema_EmitsIfc4HeaderAndTriangulatedFaceSet()
+    {
+        var doc = CreateSyntheticDocument("Стена наружная 300мм", "Железобетон");
+
+        using var sw = new StringWriter();
+        doc.SaveIfc(sw, new NwcIfcExportOptions
+        {
+            SchemaVersion = NwcIfcSchemaVersion.Ifc4,
+            ExportTypeObjects = true,
+            UseTessellationInIfc4 = true,
+        });
+
+        string ifc = sw.ToString();
+
+        // 1. Header schema and view definition
+        Assert.Contains("FILE_SCHEMA(('IFC4'));", ifc);
+        Assert.Contains("DesignTransferView", ifc);
+
+        // 2. Geometry: Tessellation via IfcTriangulatedFaceSet + IfcCartesianPointList3D
+        Assert.Contains("IFCCARTESIANPOINTLIST3D(", ifc);
+        Assert.Contains("IFCTRIANGULATEDFACESET(", ifc);
+        Assert.Contains("'Tessellation'", ifc);
+
+        // 3. Type Products
+        Assert.Contains("IFCWALLTYPE(", ifc);
+        Assert.Contains("IFCRELDEFINESBYTYPE(", ifc);
+    }
+
+    [Fact]
+    public void SaveIfc_ExportTypeObjectsFalse_OmitsTypesAndRelDefinesByType()
+    {
+        var doc = CreateSyntheticDocument("Стена наружная 300мм", "Железобетон");
+
+        using var sw = new StringWriter();
+        doc.SaveIfc(sw, new NwcIfcExportOptions
+        {
+            SchemaVersion = NwcIfcSchemaVersion.Ifc4,
+            ExportTypeObjects = false,
+        });
+
+        string ifc = sw.ToString();
+
+        Assert.DoesNotContain("IFCRELDEFINESBYTYPE", ifc);
+        Assert.DoesNotContain("IFCWALLTYPE", ifc);
+    }
+
+    [Fact]
+    public void SaveIfc_Ifc2x3WithTypes_EmitsIfc2x3HeaderAndTypes()
+    {
+        var doc = CreateSyntheticDocument("Колонна монолитная", "Бетон B25");
+
+        using var sw = new StringWriter();
+        doc.SaveIfc(sw, new NwcIfcExportOptions
+        {
+            SchemaVersion = NwcIfcSchemaVersion.Ifc2x3,
+            ExportTypeObjects = true,
+        });
+
+        string ifc = sw.ToString();
+
+        Assert.Contains("FILE_SCHEMA(('IFC2X3'));", ifc);
+        Assert.Contains("CoordinationView", ifc);
+        Assert.Contains("IFCFACETEDBREP(", ifc);
+        Assert.Contains("IFCCOLUMNTYPE(", ifc);
+        Assert.Contains("IFCRELDEFINESBYTYPE(", ifc);
+    }
 }
