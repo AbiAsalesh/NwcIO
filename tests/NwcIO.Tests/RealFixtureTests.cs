@@ -5,19 +5,7 @@ namespace NwcIO.Tests;
 
 public class RealFixtureTests
 {
-    private static readonly string? FixturePath = ResolveFixturePath();
-
-    private static string? ResolveFixturePath()
-    {
-        var env = Environment.GetEnvironmentVariable("NWCIO_TEST_FILES");
-        if (!string.IsNullOrEmpty(env) && File.Exists(env))
-        {
-            return env;
-        }
-
-        const string defaultPath = @"sample_building.nwc";
-        return File.Exists(defaultPath) ? defaultPath : null;
-    }
+    private static readonly string? FixturePath = TestFiles.TryResolvePrimary();
 
     [Fact]
     public void Open_RealNwcFixture_ParsesHeaderAndRecords()
@@ -223,8 +211,8 @@ public class RealFixtureTests
         }
 
         // Milestone 5: Verify Multi-Model Assembly
-        var fixture2 = @"sample_mep.nwc";
-        if (File.Exists(fixture2))
+        var fixture2 = TestFiles.TryResolveSecondary(FixturePath);
+        if (fixture2 is not null && File.Exists(fixture2))
         {
             var doc2 = NwcDocument.Open(fixture2);
             var assembly = Model.NwcAssembly.Create("Campus_Coordination", doc, doc2);

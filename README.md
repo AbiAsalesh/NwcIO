@@ -242,7 +242,7 @@ assembly.SaveViewpointsBcf("assembly_viewpoints.bcfzip");
 
 ## Performance
 
-Tested on real industrial BIM projects (8 buildings, sample BIM project):
+Tested on representative multi-discipline BIM models and campus assemblies:
 
 | Metric | Single Model (~250 KB) | Federated Assembly (~3 MB) | Multi-Building Campus (~10 MB) |
 |---|---|---|---|
@@ -256,6 +256,10 @@ Tested on real industrial BIM projects (8 buildings, sample BIM project):
 
 ---
 
-## License
+## License and trademarks
 
-MIT &copy; 2026 [mahach666](https://github.com/mahach666)
+NwcIO is licensed under the [MIT License](LICENSE). Copyright &copy; 2026 [mahach666](https://github.com/mahach666).
+
+NwcIO is not affiliated with, endorsed by, or sponsored by Autodesk. Autodesk, Navisworks, and Revit are trademarks of Autodesk, Inc.
+
+The file format is read by analysing binary stream structures for interoperability. No Autodesk code or binaries are included.

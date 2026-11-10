@@ -40,7 +40,7 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
 - **Signature**: `[int64 7]` followed by length-prefixed strings.
 - **Fields**:
   - `int64`: marker `7`
-  - `int32 len` + UTF-8 string: full path of originating source document (e.g., `S:\...\Building_Structural.rvt`)
+  - `int32 len` + UTF-8 string: full path of originating source document (e.g., `C:\Projects\Building_Structural.rvt`)
   - `int32 -1`
   - `int64`: modification timestamp as Unix epoch seconds
   - `int64`: source file size in bytes

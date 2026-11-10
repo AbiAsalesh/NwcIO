@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from PIL import Image, ImageDraw
 
 # 6x9 pixel grid for each character:
@@ -73,7 +74,7 @@ pal_nwc = {
     3: '#86EFAC', # Highlight
 }
 
-# IO: Electric Royal Blue / Azure
+# IO: Electric Royal Blue / Azure (UNIQUE for NwcIO!)
 pal_io = {
     0: '#0B1B3D', # Deep shadow
     1: '#1D4ED8', # Mid tone
@@ -114,9 +115,6 @@ def build_svg(width, height, rx, block_size, base_xs, start_y, shadow_offset, le
                             c += 1
         out.append(f'<path fill="{pal[0]}" d="{"".join(shadow_rects)}"/>')
 
-        # Front faces grouped by color
-        # In rvtio, each segment is rendered in raster order
-        # Let's collect spans for each face color
         for color_val in [3, 2, 1]:
             face_rects = []
             for idx in letter_indices:
@@ -197,79 +195,112 @@ def render_png(width, height, rx, block_size, base_xs, start_y, shadow_offset, l
 
     return img
 
-def render_icon():
-    # 128x128 icon with letter N centered
-    size = 128
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=24, fill='#12161C')
+def render_canonical_icon():
+    # Remap RvtIO icon directly to ensure exact 100% parity with RvtIO's glyph height, font, and bounds
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rvt_icon_path = os.environ.get('RVT_ICON_PATH') or os.path.abspath(os.path.join(root, '..', 'RvtIO', 'src', 'RvtIO', 'icon.png'))
+    if not os.path.exists(rvt_icon_path):
+        rvt_icon_path = os.path.abspath(os.path.join(root, '..', 'mahach666', 'RvtIO', 'src', 'RvtIO', 'icon.png'))
+    if not os.path.exists(rvt_icon_path):
+        rvt_icon_path = os.path.join(root, 'src', 'NwcIO', 'icon.png')
+    im_rvt = Image.open(rvt_icon_path)
+    arr = np.array(im_rvt, dtype=np.float64)
 
-    # Grid: N is 6x9 blocks
-    # Block size 10 -> 60x90 px
-    block = 10
-    start_x = (size - 6 * block) // 2 - 3 # center accounting for shadow
-    start_y = (size - 9 * block) // 2 - 3
-    shadow_offset = 1.2
+    c_bg = np.array([18.0, 22.0, 28.0])
+    c_0  = np.array([122.0, 74.0, 18.0])  # shadow
+    c_1  = np.array([201.0, 122.0, 43.0]) # mid
+    c_2  = np.array([242.0, 163.0, 58.0]) # bright
+    c_3  = np.array([255.0, 216.0, 74.0]) # highlight
+    bases_rvt = [c_bg, c_0, c_1, c_2, c_3]
 
-    # Shadow
-    for step in range(1, 7):
-        ox = start_x + step * shadow_offset
-        oy = start_y + step * shadow_offset
-        for r in range(9):
-            for c in range(6):
-                if N[r][c] != ' ':
-                    x1 = int(ox + c * block)
-                    y1 = int(oy + r * block)
-                    x2 = int(ox + (c + 1) * block - 1)
-                    y2 = int(oy + (r + 1) * block - 1)
-                    draw.rectangle([x1, y1, x2, y2], fill=pal_nwc[0])
+    bases_target = [
+        np.array([18.0, 22.0, 28.0]),   # bg
+        np.array([11.0, 27.0, 61.0]),   # shadow #0B1B3D
+        np.array([29.0, 78.0, 216.0]),  # mid #1D4ED8
+        np.array([59.0, 130.0, 246.0]), # bright #3B82F6
+        np.array([147.0, 197.0, 253.0]) # highlight #93C5FD
+    ]
 
-    # Face
-    for r in range(9):
-        for c in range(6):
-            val = N[r][c]
-            if val != ' ':
-                color = pal_nwc[int(val)]
-                x1 = int(start_x + c * block)
-                y1 = int(start_y + r * block)
-                x2 = int(start_x + (c + 1) * block - 1)
-                y2 = int(start_y + (r + 1) * block - 1)
-                draw.rectangle([x1, y1, x2, y2], fill=color)
+    def decompose(rgb):
+        for i, b in enumerate(bases_rvt):
+            if np.allclose(rgb, b, atol=1.0):
+                return [(i, 1.0)]
+        pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 2), (0, 3), (0, 4), (1, 3), (1, 4), (2, 4)]
+        best_pair = None
+        best_dist = 1e9
+        best_t = 0.0
+        for i, j in pairs:
+            v = bases_rvt[j] - bases_rvt[i]
+            v_norm2 = np.dot(v, v)
+            if v_norm2 < 1e-6: continue
+            t = np.clip(np.dot(rgb - bases_rvt[i], v) / v_norm2, 0.0, 1.0)
+            proj = bases_rvt[i] + t * v
+            dist = np.linalg.norm(rgb - proj)
+            if dist < best_dist:
+                best_dist = dist
+                best_pair = (i, j)
+                best_t = t
+        return [(best_pair[0], 1.0 - best_t), (best_pair[1], best_t)]
 
-    return img
+    unique_rgbs = {}
+    for y in range(128):
+        for x in range(128):
+            rgb = tuple(arr[y, x, :3].astype(int))
+            if rgb not in unique_rgbs:
+                unique_rgbs[rgb] = decompose(np.array(rgb, dtype=np.float64))
+
+    out = np.zeros_like(arr, dtype=np.uint8)
+    for y in range(128):
+        for x in range(128):
+            alpha = arr[y, x, 3]
+            if alpha == 0:
+                out[y, x] = [0, 0, 0, 0]
+            elif alpha < 255:
+                out[y, x, :3] = bases_target[0]
+                out[y, x, 3] = int(alpha)
+            else:
+                rgb = tuple(arr[y, x, :3].astype(int))
+                decomp = unique_rgbs[rgb]
+                rec = sum(w * bases_target[idx] for idx, w in decomp)
+                rec = np.clip(np.round(rec), 0, 255).astype(np.uint8)
+                out[y, x, :3] = rec
+                out[y, x, 3] = 255
+    return Image.fromarray(out, 'RGBA')
 
 def main():
-    os.makedirs('docs/images', exist_ok=True)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    docs_images = os.path.join(root, 'docs', 'images')
+    os.makedirs(docs_images, exist_ok=True)
     letters = [N, W, C, I, O]
 
     # 1. nwcio-logo.svg (590x214, rx=18, block=14, base_xs=[23, 135, 247, 359, 471], start_y=38, shadow=2)
     logo_svg = build_svg(590, 214, 18, 14, [23, 135, 247, 359, 471], 38, 2, letters, "NwcIO")
-    with open('docs/images/nwcio-logo.svg', 'w', encoding='utf-8') as f:
+    with open(os.path.join(docs_images, 'nwcio-logo.svg'), 'w', encoding='utf-8') as f:
         f.write(logo_svg)
     print("Wrote docs/images/nwcio-logo.svg")
 
     # 2. nwcio-logo.png (1180x428 2x scale RGBA)
     logo_png = render_png(590, 214, 18, 14, [23, 135, 247, 359, 471], 38, 2, letters, scale=2, alpha_bg=True)
-    logo_png.save('docs/images/nwcio-logo.png')
+    logo_png.save(os.path.join(docs_images, 'nwcio-logo.png'))
     print("Wrote docs/images/nwcio-logo.png")
 
     # 3. nwcio-banner.svg (1280x320, rx=0, block=24, base_xs=[178, 370, 562, 754, 946], start_y=46, shadow=3.4)
     banner_svg = build_svg(1280, 320, 0, 24, [178, 370, 562, 754, 946], 46, 3.4, letters, "NwcIO")
-    with open('docs/images/nwcio-banner.svg', 'w', encoding='utf-8') as f:
+    with open(os.path.join(docs_images, 'nwcio-banner.svg'), 'w', encoding='utf-8') as f:
         f.write(banner_svg)
     print("Wrote docs/images/nwcio-banner.svg")
 
     # 4. nwcio-banner.png (1280x320 RGB)
     banner_png = render_png(1280, 320, 0, 24, [178, 370, 562, 754, 946], 46, 3.4, letters, scale=1, alpha_bg=False)
-    banner_png.save('docs/images/nwcio-banner.png')
+    banner_png.save(os.path.join(docs_images, 'nwcio-banner.png'))
     print("Wrote docs/images/nwcio-banner.png")
 
     # 5. icon.png for packages (src/NwcIO/icon.png and src/NwcIO.Cli/icon.png)
-    icon_png = render_icon()
-    os.makedirs('src/NwcIO', exist_ok=True)
-    os.makedirs('src/NwcIO.Cli', exist_ok=True)
-    icon_png.save('src/NwcIO/icon.png')
-    icon_png.save('src/NwcIO.Cli/icon.png')
+    icon_png = render_canonical_icon()
+    os.makedirs(os.path.join(root, 'src', 'NwcIO'), exist_ok=True)
+    os.makedirs(os.path.join(root, 'src', 'NwcIO.Cli'), exist_ok=True)
+    icon_png.save(os.path.join(root, 'src', 'NwcIO', 'icon.png'))
+    icon_png.save(os.path.join(root, 'src', 'NwcIO.Cli', 'icon.png'))
     print("Wrote src/NwcIO/icon.png and src/NwcIO.Cli/icon.png")
 
 if __name__ == '__main__':

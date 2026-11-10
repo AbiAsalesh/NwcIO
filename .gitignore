@@ -11,3 +11,5 @@ TestResults/
 artifacts/
 *.binlog
 *.tmp
+__pycache__/
+*.pyc
