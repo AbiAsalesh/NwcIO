@@ -1,0 +1,13 @@
+bin/
+obj/
+out/
+publish/
+*.user
+.vs/
+.idea/
+.idea_modules/
+*.sln.DotSettings.user
+TestResults/
+artifacts/
+*.binlog
+*.tmp

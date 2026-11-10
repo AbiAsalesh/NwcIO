@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/NwcIO/NwcIO.csproj" />
+  <Project Path="src/NwcIO.Cli/NwcIO.Cli.csproj" />
+  <Project Path="tests/NwcIO.Tests/NwcIO.Tests.csproj" />
+</Solution>
