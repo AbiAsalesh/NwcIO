@@ -147,6 +147,28 @@ public class RealFixtureTests
         Assert.True(hit.Distance > 0);
         Assert.NotNull(hit.Mesh);
 
+        // Step 1: Verify IFC export on real fixture
+        string tempIfc = Path.Combine(Path.GetTempPath(), $"fixture_ifc_{Guid.NewGuid():N}.ifc");
+        try
+        {
+            doc.SaveIfc(tempIfc);
+            Assert.True(File.Exists(tempIfc));
+            var ifcInfo = new FileInfo(tempIfc);
+            Assert.True(ifcInfo.Length > 100_000, $"Expected IFC file > 100KB, got {ifcInfo.Length} bytes");
+
+            string ifcHeader = File.ReadLines(tempIfc).Take(30).Aggregate((a, b) => a + "\n" + b);
+            Assert.Contains("ISO-10303-21;", ifcHeader);
+            Assert.Contains("FILE_SCHEMA(('IFC2X3'));", ifcHeader);
+            Assert.Contains("IFCPROJECT(", ifcHeader);
+
+            string ifcTail = File.ReadLines(tempIfc).TakeLast(5).Aggregate((a, b) => a + "\n" + b);
+            Assert.Contains("END-ISO-10303-21;", ifcTail);
+        }
+        finally
+        {
+            if (File.Exists(tempIfc)) File.Delete(tempIfc);
+        }
+
         // Milestone 5: Verify Multi-Model Assembly
         var fixture2 = @"sample_mep.nwc";
         if (File.Exists(fixture2))

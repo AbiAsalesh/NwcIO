@@ -11,19 +11,20 @@ namespace NwcIO.Cli;
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb] [options]
+        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb|output.ifc] [options]
                nwcio --help | --version
 
         Reads Autodesk Navisworks files (.nwc, .nwd, .nwf) or assemblies of models
         and exports scene trees, properties, 3D transforms, materials, and 3D polygon meshes
-        (GLB/OBJ/JSON) with BVH spatial acceleration, without requiring Navisworks.
+        (IFC/GLB/OBJ/JSON) with BVH spatial acceleration, without requiring Navisworks.
 
         Arguments:
           <input>            Path to .nwc, .nwd, .nwf file or a folder of .nwc models.
-          [output]           Destination path for exported file (.json, .obj, or .glb).
+          [output]           Destination path for exported file (.json, .obj, .glb, or .ifc).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
+          --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC2x3 Coordination View
           --glb <file.glb>   Export 3D geometry and materials to glTF 2.0 Binary format (GLB)
           --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
           --local-coords     Export geometry in local coordinate space (default: world coordinates)
@@ -69,6 +70,7 @@ internal static class Program
         string? outputPath = null;
         string? explicitObjPath = null;
         string? explicitGlbPath = null;
+        string? explicitIfcPath = null;
         string? raycastArg = null;
         bool checkClashes = false;
         bool bvhStats = false;
@@ -118,6 +120,14 @@ internal static class Program
                     }
                     raycastArg = args[++i];
                     break;
+                case "--ifc":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --ifc.");
+                        return 1;
+                    }
+                    explicitIfcPath = args[++i];
+                    break;
                 case "--obj":
                     if (i + 1 >= args.Length)
                     {
@@ -141,7 +151,7 @@ internal static class Program
                     printReport = true;
                     break;
                 default:
-                    if (arg.StartsWith('-'))
+                    if (arg != "-" && arg.StartsWith('-'))
                     {
                         Console.Error.WriteLine($"Error: Unrecognized option '{arg}'.");
                         Console.Error.WriteLine(UsageText);
@@ -188,7 +198,7 @@ internal static class Program
         if (isDirectory)
         {
             return ProcessAssemblyDirectory(
-                inputPath, outputPath, explicitGlbPath, explicitObjPath,
+                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
                 worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
         }
 
@@ -196,7 +206,7 @@ internal static class Program
         if (inputPath.EndsWith(".nwf", StringComparison.OrdinalIgnoreCase))
         {
             return ProcessNwfAssembly(
-                inputPath, outputPath, explicitGlbPath, explicitObjPath,
+                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
                 worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
         }
 
@@ -228,12 +238,18 @@ internal static class Program
             return 3;
         }
 
+        bool outputIsIfc = outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase);
         bool outputIsObj = outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase);
         bool outputIsGlb = outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
 
         try
         {
-            if (outputIsGlb)
+            if (outputIsIfc)
+            {
+                EnsureParentDirectory(outputPath);
+                doc.SaveIfc(outputPath);
+            }
+            else if (outputIsGlb)
             {
                 EnsureParentDirectory(outputPath);
                 doc.SaveGlb(outputPath, worldCoords);
@@ -265,6 +281,12 @@ internal static class Program
                     EnsureParentDirectory(outputPath);
                     JsonExporter.WriteFile(doc, outputPath, exportOptions);
                 }
+            }
+
+            if (!string.IsNullOrEmpty(explicitIfcPath))
+            {
+                EnsureParentDirectory(explicitIfcPath);
+                doc.SaveIfc(explicitIfcPath);
             }
 
             if (!string.IsNullOrEmpty(explicitGlbPath))
@@ -343,6 +365,7 @@ internal static class Program
         string? outputPath,
         string? explicitGlbPath,
         string? explicitObjPath,
+        string? explicitIfcPath,
         bool worldCoords,
         bool checkClashes,
         bool bvhStats,
@@ -355,7 +378,11 @@ internal static class Program
 
         var assembly = NwcAssembly.LoadFromDirectory(dirPath);
 
-        if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveIfc(outputPath);
+        }
+        else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
             assembly.SaveGlb(outputPath, worldCoords);
         }
@@ -368,6 +395,7 @@ internal static class Program
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
+        if (!string.IsNullOrEmpty(explicitIfcPath)) assembly.SaveIfc(explicitIfcPath);
         if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
         if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
 
@@ -418,6 +446,7 @@ internal static class Program
         string? outputPath,
         string? explicitGlbPath,
         string? explicitObjPath,
+        string? explicitIfcPath,
         bool worldCoords,
         bool checkClashes,
         bool bvhStats,
@@ -429,7 +458,11 @@ internal static class Program
         outputPath ??= Path.ChangeExtension(nwfPath, ".glb");
         var assembly = NwcAssembly.OpenNwf(nwfPath);
 
-        if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveIfc(outputPath);
+        }
+        else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
             assembly.SaveGlb(outputPath, worldCoords);
         }
@@ -442,6 +475,7 @@ internal static class Program
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
+        if (!string.IsNullOrEmpty(explicitIfcPath)) assembly.SaveIfc(explicitIfcPath);
         if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
         if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
 

@@ -184,6 +184,18 @@ public sealed class NwcDocument
         Internal.Export.GlbExporter.Write(Meshes, Materials, stream, worldCoordinates, FileInfo.LoaderPlugin);
     }
 
+    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to an IFC2x3 STEP file (.ifc).</summary>
+    public void SaveIfc(string path, NwcIfcExportOptions? options = null)
+    {
+        Internal.Export.IfcExporter.WriteFile(this, path, options);
+    }
+
+    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to a <see cref="TextWriter"/> in IFC2x3 format.</summary>
+    public void SaveIfc(TextWriter writer, NwcIfcExportOptions? options = null)
+    {
+        Internal.Export.IfcExporter.Write(this, writer, options);
+    }
+
     /// <summary>Exports the document to a JSON file.</summary>
     public void SaveJson(string path, NwcJsonExportOptions? options = null)
     {

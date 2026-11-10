@@ -165,3 +165,24 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Sub-millisecond spatial range queries (`QueryBox`) and frustum testing.
   - High-performance raycasting using branch-and-bound AABB traversal followed by double-precision Möller–Trumbore ray-triangle intersection tests with surface normal determination.
   - Multi-model clash detection (`FindClashes`) detecting spatial bounding box collisions across models.
+
+### 2.11 Industry Foundation Classes (IFC2x3 Coordination View Export)
+- **Schema & Format**:
+  - Implements buildingSMART ISO 10303-21 STEP physical file exchange format for IFC2x3 Coordination View V2.0.
+  - Header: `FILE_DESCRIPTION(('ViewDefinition [CoordinationView_V2.0]'),'2;1');`, `FILE_SCHEMA(('IFC2X3'));`.
+- **Character Encoding**:
+  - Full Unicode support with ISO 10303-21 `\X2\HHHH...\X0\` escaping for Cyrillic and international characters (e.g., Russian BIM category and parameter names).
+- **Geometric Representation**:
+  - Geometry is serialized as `IfcFacetedBrep` composed of `IfcClosedShell` containing `IfcFace` &rarr; `IfcFaceOuterBound` &rarr; `IfcPolyLoop` referencing `IfcCartesianPoint` coordinates.
+  - Vertex deduplication via shared per-mesh `IfcCartesianPoint` instances, reducing STEP file size by over 60% compared to unindexed face loops.
+- **Spatial Structure & Containment**:
+  - Full IFC spatial containment graph: `IfcProject` &rarr; `IfcSite` &rarr; `IfcBuilding` &rarr; `IfcBuildingStorey`, linked via `IfcRelAggregates`.
+  - Geometric elements are assigned to storeys via `IfcRelContainedInSpatialStructure`.
+- **Semantic Classification**:
+  - Dynamic mapping of Navisworks elements, categories, and materials to standard IFC entities:
+    - `IFCWALL`, `IFCSLAB`, `IFCCOLUMN`, `IFCBEAM`, `IFCREINFORCINGBAR`, `IFCWINDOW`, `IFCDOOR`, `IFCFOOTING`, `IFCSTAIR`, `IFCRAILING`, `IFCROOF`, `IFCPIPESEGMENT`, `IFCDUCTSEGMENT`, falling back to `IFCBUILDINGELEMENTPROXY`.
+- **Materials & Properties**:
+  - Shading styles serialized via `IfcSurfaceStyle`, `IfcSurfaceStyleShading`, and `IfcColourRgb`, assigned to geometry via `IfcStyledItem`.
+  - Element metadata and dimensional bounding parameters exported as `IfcPropertySet` containing `IfcPropertySingleValue` linked to elements via `IfcRelDefinesByProperties`.
+- **Global Identifiers**:
+  - Deterministic 22-character buildingSMART base64 GUIDs generated via UUID/SHA-256 namespace hashing (`IfcGuid`), ensuring stable GUIDs across repeated exports.

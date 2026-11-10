@@ -254,6 +254,18 @@ public sealed class NwcAssembly
         ObjExporter.WriteFile(AllMeshes, path, worldCoordinates, Name);
     }
 
+    /// <summary>Exports the entire federated assembly with geometry, materials, and spatial hierarchy to an IFC2x3 STEP file (.ifc).</summary>
+    public void SaveIfc(string path, NwcIfcExportOptions? options = null)
+    {
+        IfcExporter.WriteAssembly(this, path, options);
+    }
+
+    /// <summary>Exports the entire federated assembly with geometry, materials, and spatial hierarchy to a <see cref="TextWriter"/> in IFC2x3 format.</summary>
+    public void SaveIfc(TextWriter writer, NwcIfcExportOptions? options = null)
+    {
+        IfcExporter.WriteAssembly(this, writer, options);
+    }
+
     /// <summary>Exports a structured summary of the federated assembly to a JSON file.</summary>
     public void SaveJson(string path, NwcJsonExportOptions? options = null)
     {
