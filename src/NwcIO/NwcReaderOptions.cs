@@ -11,6 +11,12 @@ public sealed class NwcReaderOptions
     /// <summary>Parse GUID tables (default: true).</summary>
     public bool ReadGuids { get; set; } = true;
 
+    /// <summary>Parse 3D transformation streams (default: true).</summary>
+    public bool ReadTransforms { get; set; } = true;
+
+    /// <summary>Build the hierarchical scene graph tree (default: true).</summary>
+    public bool BuildSceneTree { get; set; } = true;
+
     /// <summary>Keep the stream catalog (offsets, sizes, kinds) in the document (default: true).</summary>
     public bool KeepStreamCatalog { get; set; } = true;
 }

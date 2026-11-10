@@ -9,10 +9,11 @@ Mirrors the architectural principles of [mahach666/RvtIO](https://github.com/mah
 - **No Navisworks Required**: Zero dependencies on Navisworks Manage, Simulate, Freedom, or Autodesk ObjectARX/Navisworks .NET API.
 - **Pure Managed .NET**: Targets `net8.0` and `net10.0`.
 - **LcUStream Container Parser**: Stream-based ingestion of `#LcUStream` sections, back-to-back zlib stream decompression, and automatic resync framing.
-- **Scene Tree & Properties**: Parses element hierarchies (layers, collections, categories, families, types), properties, element IDs, and parameter values.
+- **Hierarchical Scene Graph**: Reconstructs Navisworks selection tree (Layers, Categories, Families, Types, Composite groups, Element instances) with nested properties.
+- **3D Spatial Transforms**: Decodes instance poses (3D translation, rotation quaternions, local bounding boxes) and computes 4x4 affine transformation matrices.
 - **GUID Extraction**: Extracts raw 16-byte element GUID tables.
 - **Metadata**: Reads source document paths (.rvt, .dwg, etc.), modification timestamps, and exporter plugin identifiers.
-- **JSON Exporter & CLI**: Exports scene metadata, hierarchy, and properties to structured JSON.
+- **JSON Exporter & CLI**: Exports scene metadata, hierarchy tree, properties, and 3D transforms to structured JSON.
 
 ## CLI Usage
 

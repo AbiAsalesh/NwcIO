@@ -75,8 +75,15 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
 - **Payload**: sequential array of 16-byte raw little-endian GUIDs corresponding to element unique IDs.
 
 ### 2.4 Transforms (`Transforms`)
-- **Signature**: `[int32 n][int32 100][int32 13]`
-- **Payload**: 4x4 affine transformation matrices (`double[16]`) for model items and instances.
+- **Signature**: `[int32 totalCount][int32 100][int32 13]`
+- **Record Layout**:
+  - `Tag 13`: Master transform entry `[int32 id][int32 13]`.
+  - `Tag 15`: 3D Pose entry `[int32 id][int32 15]`:
+    - Translation vector: 3 little-endian 64-bit IEEE 754 doubles `(X, Y, Z)` in document coordinates (typically millimeters).
+    - Rotation unit quaternion: 4 little-endian 64-bit IEEE 754 doubles `(Qx, Qy, Qz, Qw)` satisfying `Qx^2 + Qy^2 + Qz^2 + Qw^2 ≈ 1.0`.
+  - `Tag 93 (0x5D)`: Local Bounding Box `[int32 id][int32 93]`:
+    - 6 little-endian 32-bit single-precision floats `(minX, minY, minZ, maxX, maxY, maxZ)` specifying the geometry extents in local coordinates.
+- **Affine Matrix Conversion**: A 4x4 row-major matrix is computed directly from the quaternion rotation $R$ and translation vector $T$.
 
 ### 2.5 Table of Contents (`Toc`)
 - **Signature**: `[int32 x][int32 count][count * int32 compressedLengths]`

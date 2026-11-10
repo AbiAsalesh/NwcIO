@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using NwcIO;
 using NwcIO.Internal.Json;
+using NwcIO.Model;
 
 namespace NwcIO.Cli;
 
@@ -13,7 +14,7 @@ internal static class Program
                nwcio --help | --version
 
         Reads an Autodesk Navisworks (.nwc / .nwd) file and exports its scene tree,
-        properties, and metadata to JSON without requiring Navisworks to be installed.
+        properties, 3D transforms, and metadata to JSON without requiring Navisworks to be installed.
 
         Arguments:
           <input>            Path to the .nwc or .nwd file to read.
@@ -22,6 +23,8 @@ internal static class Program
 
         Options:
           --catalog          Include raw container stream catalog (offsets, sizes, kinds)
+          --no-transforms    Exclude 3D transform matrices from JSON export
+          --no-tree          Exclude hierarchical scene graph tree from JSON export
           --no-indent        Write compact JSON instead of pretty-printed indented JSON
           --report           Print summary report to standard error
           -h, --help         Show this help message and exit
@@ -55,6 +58,8 @@ internal static class Program
         string? inputPath = null;
         string? outputPath = null;
         bool includeCatalog = false;
+        bool includeTransforms = true;
+        bool includeTree = true;
         bool indent = true;
         bool printReport = false;
 
@@ -65,6 +70,12 @@ internal static class Program
             {
                 case "--catalog":
                     includeCatalog = true;
+                    break;
+                case "--no-transforms":
+                    includeTransforms = false;
+                    break;
+                case "--no-tree":
+                    includeTree = false;
                     break;
                 case "--no-indent":
                     indent = false;
@@ -133,6 +144,8 @@ internal static class Program
         var exportOptions = new NwcJsonExportOptions
         {
             Indented = indent,
+            IncludeTransforms = includeTransforms,
+            IncludeSceneTree = includeTree,
             IncludeStreamCatalog = includeCatalog,
         };
 
@@ -164,21 +177,40 @@ internal static class Program
 
         if (printReport)
         {
+            int treeNodeCount = CountNodes(doc.RootNode);
             Console.Error.WriteLine("=== NwcIO Execution Report ===");
             Console.Error.WriteLine($"Input:            {inputPath}");
             Console.Error.WriteLine($"Source document:  {doc.FileInfo.SourcePath ?? "<unknown>"}");
             Console.Error.WriteLine($"Loader plugin:    {doc.FileInfo.LoaderPlugin ?? "<unknown>"}");
             Console.Error.WriteLine($"Timestamp:        {doc.FileInfo.SourceTimestampUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) ?? "<unknown>"}");
+            Console.Error.WriteLine($"Scene tree nodes: {treeNodeCount}");
             Console.Error.WriteLine($"Property records: {doc.PropertyRecords.Count}");
             Console.Error.WriteLine($"GUIDs:            {doc.Guids.Count}");
+            Console.Error.WriteLine($"3D Transforms:    {doc.Transforms.Count}");
             Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
             Console.Error.WriteLine($"Output:           {outputPath}");
         }
         else
         {
-            Console.WriteLine($"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs to '{outputPath}' in {sw.ElapsedMilliseconds} ms.");
+            Console.WriteLine($"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs, {doc.Transforms.Count} transforms to '{outputPath}' in {sw.ElapsedMilliseconds} ms.");
         }
 
         return 0;
+    }
+
+    private static int CountNodes(NwcNode? node)
+    {
+        if (node is null)
+        {
+            return 0;
+        }
+
+        int count = 1;
+        foreach (var child in node.Children)
+        {
+            count += CountNodes(child);
+        }
+
+        return count;
     }
 }

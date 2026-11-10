@@ -9,21 +9,35 @@ namespace NwcIO;
 /// </summary>
 public sealed class NwcDocument
 {
-    private NwcDocument(NwcFileInfo fileInfo, IReadOnlyList<NwcPropertyRecord> records, IReadOnlyList<Guid> guids, NwcContainer container)
+    private NwcDocument(
+        NwcFileInfo fileInfo,
+        IReadOnlyList<NwcPropertyRecord> records,
+        IReadOnlyList<Guid> guids,
+        IReadOnlyList<NwcTransform> transforms,
+        NwcNode? rootNode,
+        NwcContainer container)
     {
         FileInfo = fileInfo;
         PropertyRecords = records;
         Guids = guids;
+        Transforms = transforms;
+        RootNode = rootNode;
         Container = container;
     }
 
     public NwcFileInfo FileInfo { get; }
 
-    /// <summary>Records parsed from the scene-tree/property streams.</summary>
+    /// <summary>Flat records parsed from the scene-tree/property streams.</summary>
     public IReadOnlyList<NwcPropertyRecord> PropertyRecords { get; }
 
     /// <summary>GUIDs from the GUID table streams, in file order.</summary>
     public IReadOnlyList<Guid> Guids { get; }
+
+    /// <summary>3D spatial transformations and bounding boxes parsed from transform streams.</summary>
+    public IReadOnlyList<NwcTransform> Transforms { get; }
+
+    /// <summary>Root of the hierarchical scene graph tree (matching Navisworks selection tree).</summary>
+    public NwcNode? RootNode { get; }
 
     internal NwcContainer Container { get; }
 
@@ -71,12 +85,28 @@ public sealed class NwcDocument
             }
         }
 
+        var transforms = new List<NwcTransform>();
+        if (options.ReadTransforms)
+        {
+            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.Transforms))
+            {
+                transforms.AddRange(TransformParser.Parse(stream));
+            }
+        }
+
+        NwcNode? rootNode = null;
+        if (options.BuildSceneTree)
+        {
+            string rootName = Path.GetFileNameWithoutExtension(fileInfo.SourcePath ?? path);
+            rootNode = SceneTreeBuilder.Build(rootName, records, transforms, guids);
+        }
+
         if (!options.KeepStreamCatalog)
         {
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, rootNode, container);
     }
 
     /// <summary>Exports the document to a JSON file.</summary>

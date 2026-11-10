@@ -41,8 +41,24 @@ public class RealFixtureTests
         Assert.NotEmpty(doc.PropertyRecords);
         Assert.True(doc.PropertyRecords.Count > 500);
 
+        Assert.NotEmpty(doc.Transforms);
+        Assert.True(doc.Transforms.Count > 1000);
+        var firstTransform = doc.Transforms[0];
+        Assert.True(firstTransform.Translation.X > 0);
+        Assert.True(firstTransform.Rotation.IsNormalized());
+        Assert.Equal(16, firstTransform.ToMatrix4x4().Length);
+
+        Assert.NotNull(doc.RootNode);
+        Assert.NotEmpty(doc.RootNode.Children);
+
         // Verify JSON export
-        string json = doc.ToJson(new NwcJsonExportOptions { Indented = false, IncludeStreamCatalog = true });
+        string json = doc.ToJson(new NwcJsonExportOptions
+        {
+            Indented = false,
+            IncludeTransforms = true,
+            IncludeSceneTree = true,
+            IncludeStreamCatalog = true,
+        });
         Assert.NotEmpty(json);
 
         using var jsonDoc = JsonDocument.Parse(json);
@@ -53,6 +69,10 @@ public class RealFixtureTests
         Assert.Equal(doc.PropertyRecords.Count, countEl.GetInt32());
         Assert.True(root.TryGetProperty("guids", out var guidsEl));
         Assert.Equal(doc.Guids.Count, guidsEl.GetArrayLength());
+        Assert.True(root.TryGetProperty("transforms", out var transformsEl));
+        Assert.Equal(doc.Transforms.Count, transformsEl.GetArrayLength());
+        Assert.True(root.TryGetProperty("sceneTree", out var sceneTreeEl));
+        Assert.True(sceneTreeEl.TryGetProperty("children", out _));
         Assert.True(root.TryGetProperty("container", out var containerEl));
         Assert.True(containerEl.TryGetProperty("streams", out _));
     }

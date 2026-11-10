@@ -1,5 +1,6 @@
 using System.Text.Json;
 using NwcIO.Internal.Container;
+using NwcIO.Model;
 
 namespace NwcIO.Internal.Json;
 
@@ -57,6 +58,65 @@ public static class JsonExporter
 
         writer.WriteEndArray();
 
+        if (options.IncludeTransforms && document.Transforms.Count > 0)
+        {
+            writer.WriteNumber("transformCount", document.Transforms.Count);
+            writer.WriteStartArray("transforms");
+            foreach (var transform in document.Transforms)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("id", transform.Id);
+
+                writer.WriteStartObject("translation");
+                WriteSafeNumber(writer, "x", transform.Translation.X);
+                WriteSafeNumber(writer, "y", transform.Translation.Y);
+                WriteSafeNumber(writer, "z", transform.Translation.Z);
+                writer.WriteEndObject();
+
+                writer.WriteStartObject("rotation");
+                WriteSafeNumber(writer, "x", transform.Rotation.X);
+                WriteSafeNumber(writer, "y", transform.Rotation.Y);
+                WriteSafeNumber(writer, "z", transform.Rotation.Z);
+                WriteSafeNumber(writer, "w", transform.Rotation.W);
+                writer.WriteEndObject();
+
+                if (transform.BoundingBox is { } bbox)
+                {
+                    writer.WriteStartObject("boundingBox");
+                    writer.WriteStartArray("min");
+                    WriteSafeNumberValue(writer, bbox.Min.X);
+                    WriteSafeNumberValue(writer, bbox.Min.Y);
+                    WriteSafeNumberValue(writer, bbox.Min.Z);
+                    writer.WriteEndArray();
+                    writer.WriteStartArray("max");
+                    WriteSafeNumberValue(writer, bbox.Max.X);
+                    WriteSafeNumberValue(writer, bbox.Max.Y);
+                    WriteSafeNumberValue(writer, bbox.Max.Z);
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteStartArray("matrix");
+                foreach (double m in transform.ToMatrix4x4())
+                {
+                    WriteSafeNumberValue(writer, m);
+                }
+
+                writer.WriteEndArray();
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        if (options.IncludeSceneTree && document.RootNode is not null)
+        {
+            writer.WriteStartObject("sceneTree");
+            WriteNodeRecursive(writer, document.RootNode);
+            writer.WriteEndObject();
+        }
+
         if (options.IncludeStreamCatalog)
         {
             WriteStreamCatalog(writer, document);
@@ -70,6 +130,71 @@ public static class JsonExporter
     {
         using var stream = File.Create(path);
         Write(document, stream, options);
+    }
+
+    private static void WriteNodeRecursive(Utf8JsonWriter writer, NwcNode node)
+    {
+        writer.WriteNumber("id", node.Id);
+        writer.WriteString("name", node.Name);
+        writer.WriteString("class", node.Class);
+        if (node.Value is not null)
+        {
+            writer.WriteString("value", node.Value);
+        }
+
+        if (node.ElementGuid is { } guid)
+        {
+            writer.WriteString("guid", guid.ToString("D"));
+        }
+
+        if (node.Transform is { } transform)
+        {
+            writer.WriteStartObject("transform");
+            writer.WriteStartArray("translation");
+            WriteSafeNumberValue(writer, transform.Translation.X);
+            WriteSafeNumberValue(writer, transform.Translation.Y);
+            WriteSafeNumberValue(writer, transform.Translation.Z);
+            writer.WriteEndArray();
+            writer.WriteStartArray("rotation");
+            WriteSafeNumberValue(writer, transform.Rotation.X);
+            WriteSafeNumberValue(writer, transform.Rotation.Y);
+            WriteSafeNumberValue(writer, transform.Rotation.Z);
+            WriteSafeNumberValue(writer, transform.Rotation.W);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        if (node.Properties.Count > 0)
+        {
+            writer.WriteStartArray("properties");
+            foreach (var prop in node.Properties)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("name", prop.Name);
+                writer.WriteString("class", prop.Class);
+                if (prop.Value is not null)
+                {
+                    writer.WriteString("value", prop.Value);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        if (node.Children.Count > 0)
+        {
+            writer.WriteStartArray("children");
+            foreach (var child in node.Children)
+            {
+                writer.WriteStartObject();
+                WriteNodeRecursive(writer, child);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
     }
 
     private static void WriteStreamCatalog(Utf8JsonWriter writer, NwcDocument document)
@@ -121,5 +246,29 @@ public static class JsonExporter
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteSafeNumber(Utf8JsonWriter writer, string propertyName, double value)
+    {
+        if (double.IsFinite(value))
+        {
+            writer.WriteNumber(propertyName, value);
+        }
+        else
+        {
+            writer.WriteNull(propertyName);
+        }
+    }
+
+    private static void WriteSafeNumberValue(Utf8JsonWriter writer, double value)
+    {
+        if (double.IsFinite(value))
+        {
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteNullValue();
+        }
     }
 }
