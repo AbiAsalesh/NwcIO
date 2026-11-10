@@ -108,6 +108,20 @@ public static class StreamClassifier
             return NwcStreamKind.SavedViews;
         }
 
+        // Selection sets / search sets (tag 100 + 105 or XML containing <selectionsets>)
+        if ((ReadInt32(data, 0) == 100 && ReadInt32(data, 4) == 105) ||
+            ContainsAscii(data, 0, Math.Min(data.Length, 256), "<selectionsets>"))
+        {
+            return NwcStreamKind.SelectionSets;
+        }
+
+        // 4D TimeLiner schedules (tag 100 + 106 or CSV header)
+        if ((ReadInt32(data, 0) == 100 && ReadInt32(data, 4) == 106) ||
+            ContainsAscii(data, 0, Math.Min(data.Length, 128), "Task ID,Task Name"))
+        {
+            return NwcStreamKind.TimeLiner;
+        }
+
         return NwcStreamKind.Unknown;
     }
 

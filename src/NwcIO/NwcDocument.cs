@@ -20,6 +20,8 @@ public sealed class NwcDocument
         NwcXRefTable? xRefs,
         NwcDbCacheDirectory? dbCache,
         IReadOnlyList<NwcSavedViewpoint> savedViewpoints,
+        IReadOnlyList<Model.Sets.NwcSetItem> selectionSets,
+        Model.TimeLiner.NwcTimeLinerSchedule? timeLiner,
         NwcContainer container)
     {
         FileInfo = fileInfo;
@@ -32,6 +34,8 @@ public sealed class NwcDocument
         XRefs = xRefs;
         DbCache = dbCache;
         SavedViewpoints = savedViewpoints;
+        SelectionSets = selectionSets;
+        TimeLiner = timeLiner;
         Container = container;
     }
 
@@ -63,6 +67,12 @@ public sealed class NwcDocument
 
     /// <summary>Saved viewpoints and camera views extracted from container viewpoint streams.</summary>
     public IReadOnlyList<NwcSavedViewpoint> SavedViewpoints { get; }
+
+    /// <summary>Selection Sets and Search Sets defined in the document.</summary>
+    public IReadOnlyList<Model.Sets.NwcSetItem> SelectionSets { get; }
+
+    /// <summary>4D TimeLiner construction simulation schedule.</summary>
+    public Model.TimeLiner.NwcTimeLinerSchedule? TimeLiner { get; }
 
     /// <summary>Gets the total 3D bounding box over all meshes in the document.</summary>
     public BoundingBox3d BoundingBox => SpatialIndex.Bounds;
@@ -182,12 +192,31 @@ public sealed class NwcDocument
             }
         }
 
+        var selectionSets = new List<Model.Sets.NwcSetItem>();
+        if (options.ReadSelectionSets)
+        {
+            foreach (var s in container.Streams.Where(s => s.Kind == NwcStreamKind.SelectionSets))
+            {
+                selectionSets.AddRange(SelectionSetParser.Parse(s));
+            }
+        }
+
+        Model.TimeLiner.NwcTimeLinerSchedule? timeLiner = null;
+        if (options.ReadTimeLiner)
+        {
+            var tlStream = container.Streams.FirstOrDefault(s => s.Kind == NwcStreamKind.TimeLiner);
+            if (tlStream is not null)
+            {
+                timeLiner = TimeLinerParser.Parse(tlStream);
+            }
+        }
+
         if (!options.KeepStreamCatalog)
         {
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, savedViewpoints, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, savedViewpoints, selectionSets, timeLiner, container);
     }
 
     /// <summary>
@@ -203,7 +232,9 @@ public sealed class NwcDocument
         IEnumerable<NwcMaterial>? materials = null,
         NwcNode? rootNode = null,
         NwcXRefTable? xRefs = null,
-        NwcDbCacheDirectory? dbCache = null)
+        NwcDbCacheDirectory? dbCache = null,
+        IEnumerable<Model.Sets.NwcSetItem>? selectionSets = null,
+        Model.TimeLiner.NwcTimeLinerSchedule? timeLiner = null)
     {
         var fi = fileInfo ?? new NwcFileInfo { SourcePath = "Model.rvt", LoaderPlugin = "LcOpRevitExport", SourceTimestampUtc = DateTime.UtcNow };
         var mList = meshes?.ToList() ?? [];
@@ -212,6 +243,7 @@ public sealed class NwcDocument
         var gList = guids?.ToList() ?? [];
         var pList = propertyRecords?.ToList() ?? [];
         var matList = materials?.ToList() ?? [];
+        var sList = selectionSets?.ToList() ?? [];
 
         var container = new NwcContainer
         {
@@ -221,7 +253,27 @@ public sealed class NwcDocument
             TrailingGap = 0,
         };
 
-        return new NwcDocument(fi, pList, gList, tList, mList, matList, rootNode, xRefs, dbCache, vList, container);
+        return new NwcDocument(fi, pList, gList, tList, mList, matList, rootNode, xRefs, dbCache, vList, sList, timeLiner, container);
+    }
+
+    /// <summary>Exports the document selection sets and search sets to Navisworks XML format.</summary>
+    public void ExportSelectionSetsXml(string path) => Model.Sets.NwcXmlSetSerializer.Save(SelectionSets, path);
+
+    /// <summary>Exports the document selection sets and search sets to an XML stream.</summary>
+    public void ExportSelectionSetsXml(Stream stream) => Model.Sets.NwcXmlSetSerializer.Write(SelectionSets, stream);
+
+    /// <summary>Exports the 4D TimeLiner schedule to CSV format.</summary>
+    public void ExportTimeLinerCsv(string path)
+    {
+        if (TimeLiner is null) throw new InvalidOperationException("Document does not contain a TimeLiner schedule.");
+        Model.TimeLiner.NwcTimeLinerCsvSerializer.Save(TimeLiner, path);
+    }
+
+    /// <summary>Exports the 4D TimeLiner schedule to a CSV stream.</summary>
+    public void ExportTimeLinerCsv(Stream stream)
+    {
+        if (TimeLiner is null) throw new InvalidOperationException("Document does not contain a TimeLiner schedule.");
+        Model.TimeLiner.NwcTimeLinerCsvSerializer.Write(TimeLiner, stream);
     }
 
     /// <summary>Saves the document to an Autodesk Navisworks (.nwc) file.</summary>

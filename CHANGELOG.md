@@ -2,6 +2,28 @@
 
 All notable changes to the `NwcIO` library and CLI are documented in this file.
 
+## [0.3.0] - 2026-11-10
+
+### Major Additions & Capabilities
+- **Selection Sets & Dynamic Search Sets**:
+  - Strongly typed selection set object model: `NwcSelectionSet`, `NwcSearchSet`, `NwcSelectionSetFolder`, and base `NwcSetItem`.
+  - Dynamic query evaluator: `NwcSearchCondition` with rich comparison operators (`Equals`, `NotEquals`, `Contains`, `StartsWith`, `EndsWith`, `Wildcard`, `GreaterThan`, `LessThan`, etc.) evaluating against node properties, categories, classes, names, and element GUIDs.
+  - `NwcSearchSet.Evaluate(NwcDocument)` recurses through the full scene graph hierarchy to resolve matching nodes at runtime.
+  - Standard Autodesk Navisworks Selection Sets XML (`.xml`) reader and writer (`NwcXmlSetSerializer`) for importing and exporting set exchange definitions (`<exchange><selectionsets>`).
+- **4D TimeLiner Construction Schedules**:
+  - Strongly typed schedule and task model: `NwcTimeLinerSchedule`, `NwcTimeLinerTask`, task types (`Construct`, `Demolish`, `Temporary`), and simulation states (`NotStarted`, `InProgress`, `Completed`).
+  - Hierarchical WBS (Work Breakdown Structure) task trees with planned/actual start/end dates, planned/actual costs, and selection set bindings.
+  - 4D Construction Simulation Engine: query temporal progress via `GetActiveTasksAt(DateTimeOffset)`, `GetSimulationProgressAt(DateTimeOffset)`, and `GetNodeStateAt(int nodeId, DateTimeOffset)`.
+  - Standard TimeLiner CSV exchange (`NwcTimeLinerCsvSerializer`) supporting standard task schedule spreadsheet import and export.
+- **Binary Partition Stream Serialization & Ingestion**:
+  - Stream classifiers and binary raw stream handlers for Selection Sets (`tag 100 + 105` / XML payload) and TimeLiner (`tag 100 + 106` / CSV payload).
+  - Roundtrip persistence of sets and schedules inside Navisworks `#LcUStream` containers via `NwcStreamSerializer`.
+- **CLI Enhancements (`nwcio`)**:
+  - Added `--sets-xml <output.xml>` option and automatic `.xml` extension routing for exporting Navisworks Selection Sets.
+  - Added `--timeliner-csv <output.csv>` option and automatic `.csv` extension routing for exporting 4D TimeLiner schedules.
+  - Added `--timeliner-simulate <YYYY-MM-DD>` option for querying construction progress, active tasks, and element states at a specific milestone date.
+  - Extended `--report` output with Selection Sets hierarchy counts and TimeLiner schedule/budget summary metrics.
+
 ## [0.2.0] - 2026-11-10
 
 ### Major Additions & Capabilities

@@ -1,0 +1,131 @@
+using NwcIO.Model;
+using NwcIO.Model.Sets;
+using Xunit;
+
+namespace NwcIO.Tests;
+
+public class SelectionSetTests
+{
+    private static NwcDocument CreateSampleDocumentWithTree()
+    {
+        var root = new NwcNode { Id = 1, Name = "RootModel", Class = "LcOaModel" };
+        var arch = new NwcNode { Id = 2, Name = "Architecture", Class = "LcOaLayer", Parent = root };
+        var wall1 = new NwcNode { Id = 10, Name = "Basic Wall: Generic - 200mm", Class = "LcRevitData_Element", Parent = arch };
+        var wall2 = new NwcNode { Id = 11, Name = "Curtain Wall: Storefront", Class = "LcRevitData_Element", Parent = arch };
+        var col1 = new NwcNode { Id = 20, Name = "M_Concrete-Round-Column: 450mm", Class = "LcRevitData_Element", Parent = arch };
+
+        arch.Children.Add(wall1);
+        arch.Children.Add(wall2);
+        arch.Children.Add(col1);
+        root.Children.Add(arch);
+
+        return NwcDocument.Create(rootNode: root);
+    }
+
+    [Fact]
+    public void SelectionSet_ResolvesNodesByIdAndPath()
+    {
+        var doc = CreateSampleDocumentWithTree();
+        var set = new NwcSelectionSet("SelectedWalls", [10, 11]);
+
+        var resolved = set.ResolveNodes(doc);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains(resolved, n => n.Id == 10);
+        Assert.Contains(resolved, n => n.Id == 11);
+    }
+
+    [Fact]
+    public void SearchSet_EvaluatesDynamicConditions()
+    {
+        var doc = CreateSampleDocumentWithTree();
+        var searchSet = new NwcSearchSet("All Columns",
+        [
+            new NwcSearchCondition("Item", "Name", NwcSearchOperator.Contains, "Column")
+        ]);
+
+        var matching = searchSet.Evaluate(doc);
+
+        var col = Assert.Single(matching);
+        Assert.Equal(20, col.Id);
+        Assert.Contains("Column", col.Name);
+    }
+
+    [Fact]
+    public void SearchSet_WildcardOperatorMatches()
+    {
+        var doc = CreateSampleDocumentWithTree();
+        var searchSet = new NwcSearchSet("Walls Wildcard",
+        [
+            new NwcSearchCondition("Item", "Name", NwcSearchOperator.Wildcard, "*Wall*")
+        ]);
+
+        var matching = searchSet.Evaluate(doc);
+
+        Assert.Equal(2, matching.Count);
+        Assert.Contains(matching, n => n.Id == 10);
+        Assert.Contains(matching, n => n.Id == 11);
+    }
+
+    [Fact]
+    public void SelectionSets_RoundtripThroughNavisworksXml()
+    {
+        var folder = new NwcSelectionSetFolder("Structural");
+        var explicitSet = new NwcSelectionSet("Piles", [101, 102, 103]);
+        var searchSet = new NwcSearchSet("Concrete Slabs",
+        [
+            new NwcSearchCondition("Item", "Name", NwcSearchOperator.StartsWith, "Floor"),
+            new NwcSearchCondition("Item", "Class", NwcSearchOperator.Equals, "LcRevitData_Element")
+        ]);
+
+        folder.Children.Add(explicitSet);
+        folder.Children.Add(searchSet);
+
+        using var ms = new MemoryStream();
+        NwcXmlSetSerializer.Write([folder], ms);
+        ms.Position = 0;
+
+        var loaded = NwcXmlSetSerializer.Read(ms);
+        var loadedFolder = Assert.IsType<NwcSelectionSetFolder>(Assert.Single(loaded));
+        Assert.Equal("Structural", loadedFolder.Name);
+        Assert.Equal(2, loadedFolder.Children.Count);
+
+        var loadedExplicit = Assert.IsType<NwcSelectionSet>(loadedFolder.Children[0]);
+        Assert.Equal("Piles", loadedExplicit.Name);
+        Assert.Equal(3, loadedExplicit.NodeIds.Count);
+
+        var loadedSearch = Assert.IsType<NwcSearchSet>(loadedFolder.Children[1]);
+        Assert.Equal("Concrete Slabs", loadedSearch.Name);
+        Assert.Equal(2, loadedSearch.Conditions.Count);
+        Assert.Equal(NwcSearchOperator.StartsWith, loadedSearch.Conditions[0].Operator);
+    }
+
+    [Fact]
+    public void SelectionSets_RoundtripThroughNwcFile()
+    {
+        var explicitSet = new NwcSelectionSet("MySelection", [50, 51]);
+        var searchSet = new NwcSearchSet("MySearch", [new NwcSearchCondition("Item", "Name", NwcSearchOperator.Contains, "Beam")]);
+
+        var doc = new NwcDocumentBuilder()
+            .SetFileInfo("SetsModel.rvt")
+            .AddSelectionSet(explicitSet)
+            .AddSelectionSet(searchSet)
+            .Build();
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        ms.Position = 0;
+
+        var reopened = NwcDocument.Open(ms);
+        Assert.Equal(2, reopened.SelectionSets.Count);
+
+        var s1 = Assert.IsType<NwcSelectionSet>(reopened.SelectionSets[0]);
+        Assert.Equal("MySelection", s1.Name);
+        Assert.Equal([50, 51], s1.NodeIds);
+
+        var s2 = Assert.IsType<NwcSearchSet>(reopened.SelectionSets[1]);
+        Assert.Equal("MySearch", s2.Name);
+        Assert.Single(s2.Conditions);
+        Assert.Equal("Beam", s2.Conditions[0].Value);
+    }
+}

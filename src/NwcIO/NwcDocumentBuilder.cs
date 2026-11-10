@@ -14,6 +14,8 @@ public sealed class NwcDocumentBuilder
     private readonly List<Guid> _guids = [];
     private readonly List<NwcPropertyRecord> _propertyRecords = [];
     private readonly List<NwcMaterial> _materials = [];
+    private readonly List<Model.Sets.NwcSetItem> _selectionSets = [];
+    private Model.TimeLiner.NwcTimeLinerSchedule? _timeLiner;
     private NwcNode? _rootNode;
 
     /// <summary>
@@ -96,6 +98,26 @@ public sealed class NwcDocumentBuilder
     }
 
     /// <summary>
+    /// Adds a selection set, search set, or set folder to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddSelectionSet(Model.Sets.NwcSetItem setItem)
+    {
+        ArgumentNullException.ThrowIfNull(setItem);
+        _selectionSets.Add(setItem);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the 4D TimeLiner construction schedule for the document.
+    /// </summary>
+    public NwcDocumentBuilder SetTimeLiner(Model.TimeLiner.NwcTimeLinerSchedule schedule)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+        _timeLiner = schedule;
+        return this;
+    }
+
+    /// <summary>
     /// Builds and returns the constructed <see cref="NwcDocument"/>.
     /// </summary>
     public NwcDocument Build()
@@ -108,6 +130,8 @@ public sealed class NwcDocumentBuilder
             guids: _guids,
             propertyRecords: _propertyRecords,
             materials: _materials,
-            rootNode: _rootNode);
+            rootNode: _rootNode,
+            selectionSets: _selectionSets,
+            timeLiner: _timeLiner);
     }
 }

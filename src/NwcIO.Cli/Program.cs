@@ -25,6 +25,9 @@ internal static class Program
 
         Options:
           --nwc <file.nwc>   Save or convert to Autodesk Navisworks format (.nwc)
+          --sets-xml <file.xml> Export selection sets and search sets to Navisworks XML format (.xml)
+          --timeliner-csv <file.csv> Export 4D TimeLiner schedule to CSV format (.csv)
+          --timeliner-simulate <date> Run 4D simulation at specified date (e.g. 2026-06-15)
           --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC (IFC2x3 / IFC4)
           --ifc-schema <schema> Target IFC schema: IFC2X3 (default) or IFC4 (Tessellation)
           --no-types         Exclude IFC type product definitions (IfcTypeProduct)
@@ -79,6 +82,9 @@ internal static class Program
         string? explicitGlbPath = null;
         string? explicitIfcPath = null;
         string? explicitNwcPath = null;
+        string? explicitSetsXmlPath = null;
+        string? explicitTimeLinerCsvPath = null;
+        string? simulateDateStr = null;
         string? explicitBcfPath = null;
         string? explicitViewpointsBcfPath = null;
         string? explicitClashHtmlPath = null;
@@ -141,6 +147,30 @@ internal static class Program
                         return 1;
                     }
                     explicitNwcPath = args[++i];
+                    break;
+                case "--sets-xml":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --sets-xml.");
+                        return 1;
+                    }
+                    explicitSetsXmlPath = args[++i];
+                    break;
+                case "--timeliner-csv":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --timeliner-csv.");
+                        return 1;
+                    }
+                    explicitTimeLinerCsvPath = args[++i];
+                    break;
+                case "--timeliner-simulate":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --timeliner-simulate.");
+                        return 1;
+                    }
+                    simulateDateStr = args[++i];
                     break;
                 case "--ifc":
                     if (i + 1 >= args.Length)
@@ -327,6 +357,8 @@ internal static class Program
         bool outputIsBcf = outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase);
         bool outputIsHtml = outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
         bool outputIsNwc = outputPath.EndsWith(".nwc", StringComparison.OrdinalIgnoreCase);
+        bool outputIsXml = outputPath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+        bool outputIsCsv = outputPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase);
 
         NwcAssembly? singleAssembly = null;
         NwcAssembly GetSingleAssembly() => singleAssembly ??= NwcAssembly.Create(Path.GetFileNameWithoutExtension(inputPath), doc);
@@ -362,6 +394,16 @@ internal static class Program
             {
                 EnsureParentDirectory(outputPath);
                 doc.Save(outputPath);
+            }
+            else if (outputIsXml)
+            {
+                EnsureParentDirectory(outputPath);
+                doc.ExportSelectionSetsXml(outputPath);
+            }
+            else if (outputIsCsv)
+            {
+                EnsureParentDirectory(outputPath);
+                doc.ExportTimeLinerCsv(outputPath);
             }
             else
             {
@@ -428,6 +470,41 @@ internal static class Program
                 EnsureParentDirectory(explicitClashHtmlPath);
                 GetSingleAssembly().SaveClashReportHtml(explicitClashHtmlPath);
             }
+
+            if (!string.IsNullOrEmpty(explicitSetsXmlPath))
+            {
+                EnsureParentDirectory(explicitSetsXmlPath);
+                doc.ExportSelectionSetsXml(explicitSetsXmlPath);
+            }
+
+            if (!string.IsNullOrEmpty(explicitTimeLinerCsvPath))
+            {
+                EnsureParentDirectory(explicitTimeLinerCsvPath);
+                doc.ExportTimeLinerCsv(explicitTimeLinerCsvPath);
+            }
+
+            if (!string.IsNullOrEmpty(simulateDateStr))
+            {
+                if (doc.TimeLiner is null || doc.TimeLiner.Tasks.Count == 0)
+                {
+                    Console.Error.WriteLine("Notice: Document has no TimeLiner schedule tasks to simulate.");
+                }
+                else if (DateTimeOffset.TryParse(simulateDateStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var simDate))
+                {
+                    Console.WriteLine($"4D TimeLiner Simulation at {simDate:yyyy-MM-dd HH:mm:ss}:");
+                    Console.WriteLine($"  Overall Progress: {doc.TimeLiner.GetSimulationProgressAt(simDate):P1}");
+                    var active = doc.TimeLiner.GetActiveTasksAt(simDate);
+                    Console.WriteLine($"  Active Tasks ({active.Count}):");
+                    foreach (var t in active)
+                    {
+                        Console.WriteLine($"    - [{t.Id}] {t.Name} ({t.TaskType}) from {t.PlannedStart:yyyy-MM-dd} to {t.PlannedEnd:yyyy-MM-dd}");
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine($"Error: Unable to parse simulation date '{simulateDateStr}'. Expected format 'yyyy-MM-dd'.");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -468,6 +545,14 @@ internal static class Program
             Console.Error.WriteLine($"Triangles:        {totalTriangles:N0}");
             Console.Error.WriteLine($"Materials:        {doc.Materials.Count}");
             Console.Error.WriteLine($"Saved viewpoints: {doc.SavedViewpoints.Count}");
+            if (doc.SelectionSets.Count > 0)
+            {
+                Console.Error.WriteLine($"Selection Sets:   {doc.SelectionSets.Count}");
+            }
+            if (doc.TimeLiner is not null)
+            {
+                Console.Error.WriteLine($"TimeLiner Tasks:  {doc.TimeLiner.Tasks.Count} (Planned Budget: {doc.TimeLiner.TotalPlannedCost:C0})");
+            }
             if (doc.XRefs is not null)
             {
                 Console.Error.WriteLine($"XRefs:            {doc.XRefs.References.Count}");

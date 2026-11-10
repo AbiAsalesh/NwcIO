@@ -22,6 +22,10 @@ public enum NwcStreamKind
     DbCache,
     /// <summary>Saved viewpoints and cameras (tag 517 with position and quaternion records).</summary>
     SavedViews,
+    /// <summary>Selection sets, search sets, and set folders.</summary>
+    SelectionSets,
+    /// <summary>4D TimeLiner construction schedule and tasks.</summary>
+    TimeLiner,
 }
 
 /// <summary>

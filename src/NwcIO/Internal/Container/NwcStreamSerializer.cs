@@ -53,7 +53,55 @@ internal static class NwcStreamSerializer
             streams.Add(BuildSavedViewsStream(doc.SavedViewpoints));
         }
 
+        // 8. Selection Sets and Search Sets stream
+        if (doc.SelectionSets.Count > 0)
+        {
+            streams.Add(BuildSelectionSetsStream(doc.SelectionSets));
+        }
+
+        // 9. 4D TimeLiner schedule stream
+        if (doc.TimeLiner is not null && doc.TimeLiner.Tasks.Count > 0)
+        {
+            streams.Add(BuildTimeLinerStream(doc.TimeLiner));
+        }
+
         return streams;
+    }
+
+    public static byte[] BuildSelectionSetsStream(IReadOnlyList<Model.Sets.NwcSetItem> sets)
+    {
+        using var xmlMs = new MemoryStream();
+        Model.Sets.NwcXmlSetSerializer.Write(sets, xmlMs);
+        byte[] xmlBytes = xmlMs.ToArray();
+
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+
+        w.Write(100); // tag category
+        w.Write(105); // tag SelectionSets
+        w.Write(sets.Count);
+        w.Write(xmlBytes.Length);
+        w.Write(xmlBytes);
+
+        return ms.ToArray();
+    }
+
+    public static byte[] BuildTimeLinerStream(Model.TimeLiner.NwcTimeLinerSchedule schedule)
+    {
+        using var csvMs = new MemoryStream();
+        Model.TimeLiner.NwcTimeLinerCsvSerializer.Write(schedule, csvMs);
+        byte[] csvBytes = csvMs.ToArray();
+
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+
+        w.Write(100); // tag category
+        w.Write(106); // tag TimeLiner
+        w.Write(schedule.Tasks.Count);
+        w.Write(csvBytes.Length);
+        w.Write(csvBytes);
+
+        return ms.ToArray();
     }
 
     public static byte[] BuildPartitionHeaderStream(NwcFileInfo fileInfo)

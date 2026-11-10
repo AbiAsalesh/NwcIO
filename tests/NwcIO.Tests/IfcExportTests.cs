@@ -66,29 +66,11 @@ public class IfcExportTests
 
         var materials = mat is not null ? new List<NwcMaterial> { mat } : [];
 
-        // Use reflection or constructor
-        var ctor = typeof(NwcDocument).GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
-        var emptyContainer = new Internal.Container.NwcContainer
-        {
-            Sections = [],
-            Streams = [],
-            FileLength = 0,
-            TrailingGap = 0,
-        };
-
-        return (NwcDocument)ctor.Invoke([
-            fileInfo,
-            records,
-            Array.Empty<Guid>(),
-            Array.Empty<NwcTransform>(),
-            new List<NwcMesh> { mesh },
-            materials,
-            null,
-            null,
-            null,
-            Array.Empty<NwcSavedViewpoint>(),
-            emptyContainer
-        ]);
+        return NwcDocument.Create(
+            fileInfo: fileInfo,
+            propertyRecords: records,
+            meshes: new List<NwcMesh> { mesh },
+            materials: materials);
     }
 
     [Fact]

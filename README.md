@@ -24,6 +24,8 @@ Built clean-room following the architectural principles of [mahach666/RvtIO](htt
 - **Spatial Acceleration Index (BVH)**: Balanced Bounding Volume Hierarchy over all meshes for sub-millisecond range queries (`QueryBox`) and double-precision Möller–Trumbore raycasting (`Raycast`).
 - **Federated Multi-Model Assemblies (.nwf)**: Aggregates multiple discipline models into a unified coordination coordinate system, reads `.nwf` external references, and detects spatial clashes (`FindClashes`).
 - **Saved Viewpoints & Cameras**: Extracts user saved viewpoints and camera views (`NwcCamera`, `NwcSavedViewpoint`) from stream tag 517 (double-precision eye coordinates, unit rotation quaternions, viewing direction, up vector, focal distance, FOV, and aspect ratio). Automatically embeds viewpoints as standard `cameras` and `nodes` in glTF 2.0 (GLB), outputs them in JSON, and exports to buildingSMART BCF 2.1 zip archives (`SaveViewpointsBcf`).
+- **Selection Sets & Dynamic Search Sets**: Strongly-typed model hierarchy (`NwcSelectionSet`, `NwcSearchSet`, `NwcSelectionSetFolder`) with scene graph query evaluation. Dynamic search rules (`NwcSearchCondition`) with rich operators (`Equals`, `NotEquals`, `Contains`, `StartsWith`, `Wildcard`, `GreaterThan`, etc.) filtering by properties, categories, names, and GUIDs. Standard Autodesk Navisworks Selection Sets XML (`.xml`) reader and writer (`ExportSelectionSetsXml`).
+- **4D TimeLiner Construction Schedules**: Work Breakdown Structure (WBS) task trees (`NwcTimeLinerSchedule`, `NwcTimeLinerTask`) with planned and actual schedules, budget tracking, and selection set bindings. 4D temporal simulation engine (`GetActiveTasksAt`, `GetSimulationProgressAt`, `GetNodeStateAt`) and standard TimeLiner CSV exchange (`ExportTimeLinerCsv`).
 - **buildingSMART BCF 2.1 Collaboration**: Pure managed exporter generating standard BIM Collaboration Format (`.bcfzip`) archives with topic folders, `markup.bcf`, viewpoints (`viewpoint.bcfv`), perspective cameras focused on clash centers, and colored component highlights (`IfcGuid`).
 - **Interactive HTML Clash Reports**: Standalone, offline HTML clash detection report with a discipline cross-clash matrix ($M_i \times M_j$ frequency), KPI summary cards, live search/filtering, and sortable clash details table.
 - **Embedded DB Cache**: Decodes the internal `LcOpDBCache` virtual table directory (offsets, sizes, flags).
@@ -128,6 +130,17 @@ nwcio model.nwc model.glb --bvh-stats --report
 
 # Test 3D raycast against scene geometry (originX, originY, originZ, dirX, dirY, dirZ)
 nwcio model.nwc --raycast "0,0,100,0,0,-1"
+
+# Export Selection Sets and Search Sets to Autodesk Navisworks XML format
+nwcio model.nwc selection_sets.xml
+nwcio model.nwc --sets-xml ./selection_sets.xml
+
+# Export 4D TimeLiner schedule to CSV spreadsheet format
+nwcio model.nwc timeliner.csv
+nwcio model.nwc --timeliner-csv ./schedule.csv
+
+# Simulate 4D construction progress at a milestone date
+nwcio model.nwc --timeliner-simulate 2026-06-01 --report
 ```
 
 ### Exit Codes
@@ -280,6 +293,62 @@ foreach (var vp in doc.SavedViewpoints)
 // Export saved viewpoints directly to buildingSMART BCF 2.1 zip archive
 doc.SaveViewpointsBcf("viewpoints.bcfzip");
 assembly.SaveViewpointsBcf("assembly_viewpoints.bcfzip");
+```
+
+### Selection Sets & Dynamic Search Sets
+
+```csharp
+using NwcIO.Model.Sets;
+
+// Add an explicit selection set
+var selection = new NwcSelectionSet("Ground Columns", [10, 11, 12, 13]);
+
+// Add a dynamic search set evaluating properties across the scene graph
+var search = new NwcSearchSet("Structural Concrete",
+[
+    new NwcSearchCondition
+    {
+        Category = "Item",
+        Property = "Type",
+        Operator = NwcSearchOperator.Contains,
+        Value = "Concrete"
+    }
+]);
+
+// Evaluate search set dynamically against the document
+var matchedNodes = search.Evaluate(doc);
+Console.WriteLine($"Found {matchedNodes.Count} matching concrete elements.");
+
+// Export selection sets and search sets to standard Navisworks XML
+doc.ExportSelectionSetsXml("sets.xml");
+```
+
+### 4D TimeLiner Construction Scheduling & Simulation
+
+```csharp
+using NwcIO.Model.TimeLiner;
+
+// Inspect 4D schedule
+if (doc.TimeLiner != null)
+{
+    Console.WriteLine($"Total Planned Cost: {doc.TimeLiner.TotalPlannedCost:C}");
+    Console.WriteLine($"Project Duration:   {doc.TimeLiner.OverallStart:d} - {doc.TimeLiner.OverallEnd:d}");
+
+    // Simulate construction progress at a target date
+    var milestone = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+    double progress = doc.TimeLiner.GetSimulationProgressAt(milestone);
+    var activeTasks = doc.TimeLiner.GetActiveTasksAt(milestone);
+
+    Console.WriteLine($"Simulation Progress: {progress * 100:F1}%");
+    Console.WriteLine($"Active Tasks:        {activeTasks.Count}");
+
+    // Query node state (NotStarted, InProgress, Completed) for 4D visual simulation
+    var state = doc.TimeLiner.GetNodeStateAt(nodeId: 42, milestone);
+    Console.WriteLine($"Node #42 state: {state}");
+
+    // Export schedule to standard TimeLiner CSV
+    doc.ExportTimeLinerCsv("construction_schedule.csv");
+}
 ```
 
 ---
