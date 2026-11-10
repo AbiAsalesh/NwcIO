@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <PackageId>NwcIO.Cli</PackageId>
+    <Description>Command line tool that reads Autodesk Navisworks files (.nwc, .nwd, .nwf) without Navisworks and exports GLB, OBJ, or JSON.</Description>
     <OutputType>Exe</OutputType>
-    <IsPackable>true</IsPackable>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>nwcio</ToolCommandName>
-    <PackageId>NwcIO.Cli</PackageId>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

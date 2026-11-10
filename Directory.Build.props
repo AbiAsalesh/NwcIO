@@ -6,15 +6,33 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <Deterministic>true</Deterministic>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <PropertyGroup>
     <Version>0.1.0</Version>
     <Authors>mahach666</Authors>
+    <Copyright>Copyright (c) 2026 mahach666</Copyright>
     <Product>NwcIO</Product>
-    <Description>Read Autodesk Navisworks files (.nwc/.nwd) without Navisworks installed.</Description>
+    <Description>Fast, pure managed .NET library and CLI tool for reading Autodesk Navisworks files (.nwc, .nwd, .nwf) without Navisworks installed.</Description>
     <NeutralLanguage>en</NeutralLanguage>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/mahach666/NwcIO</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mahach666/NwcIO</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>navisworks;nwc;nwd;nwf;bim;glb;gltf;obj;mesh;spatial-index;bvh</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false' And '$(MSBuildProjectName)' != 'NwcIO.Tests'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(MSBuildProjectDirectory)/icon.png" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GenerateDocumentationFile Condition="'$(IsPackable)' == 'true'">true</GenerateDocumentationFile>
@@ -22,6 +40,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CI)' == 'true' Or '$(GITHUB_ACTIONS)' == 'true' Or '$(TF_BUILD)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
 </Project>
