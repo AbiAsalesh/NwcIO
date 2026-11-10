@@ -11,19 +11,20 @@ namespace NwcIO.Cli;
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb|output.ifc|output.bcfzip|output.html] [options]
+        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb|output.ifc|output.bcfzip|output.html|output.nwc] [options]
                nwcio --help | --version
 
         Reads Autodesk Navisworks files (.nwc, .nwd, .nwf) or assemblies of models
         and exports scene trees, properties, 3D transforms, materials, and 3D polygon meshes
-        (IFC/GLB/OBJ/JSON/BCF/HTML) with BVH spatial acceleration, without requiring Navisworks.
+        (IFC/GLB/OBJ/JSON/BCF/HTML/NWC) with BVH spatial acceleration, without requiring Navisworks.
 
         Arguments:
           <input>            Path to .nwc, .nwd, .nwf file or a folder of .nwc models.
-          [output]           Destination path for exported file (.json, .obj, .glb, .ifc, .bcfzip, or .html).
+          [output]           Destination path for exported file (.json, .obj, .glb, .ifc, .bcfzip, .html, or .nwc).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
+          --nwc <file.nwc>   Save or convert to Autodesk Navisworks format (.nwc)
           --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC (IFC2x3 / IFC4)
           --ifc-schema <schema> Target IFC schema: IFC2X3 (default) or IFC4 (Tessellation)
           --no-types         Exclude IFC type product definitions (IfcTypeProduct)
@@ -77,6 +78,7 @@ internal static class Program
         string? explicitObjPath = null;
         string? explicitGlbPath = null;
         string? explicitIfcPath = null;
+        string? explicitNwcPath = null;
         string? explicitBcfPath = null;
         string? explicitViewpointsBcfPath = null;
         string? explicitClashHtmlPath = null;
@@ -131,6 +133,14 @@ internal static class Program
                         return 1;
                     }
                     raycastArg = args[++i];
+                    break;
+                case "--nwc":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --nwc.");
+                        return 1;
+                    }
+                    explicitNwcPath = args[++i];
                     break;
                 case "--ifc":
                     if (i + 1 >= args.Length)
@@ -269,7 +279,7 @@ internal static class Program
         if (isDirectory)
         {
             return ProcessAssemblyDirectory(
-                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
+                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath, explicitNwcPath,
                 explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
                 worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, ifcExportOptions, sw);
         }
@@ -278,7 +288,7 @@ internal static class Program
         if (inputPath.EndsWith(".nwf", StringComparison.OrdinalIgnoreCase))
         {
             return ProcessNwfAssembly(
-                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
+                inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath, explicitNwcPath,
                 explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
                 worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, ifcExportOptions, sw);
         }
@@ -316,6 +326,7 @@ internal static class Program
         bool outputIsGlb = outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
         bool outputIsBcf = outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase);
         bool outputIsHtml = outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+        bool outputIsNwc = outputPath.EndsWith(".nwc", StringComparison.OrdinalIgnoreCase);
 
         NwcAssembly? singleAssembly = null;
         NwcAssembly GetSingleAssembly() => singleAssembly ??= NwcAssembly.Create(Path.GetFileNameWithoutExtension(inputPath), doc);
@@ -347,6 +358,11 @@ internal static class Program
                 EnsureParentDirectory(outputPath);
                 doc.SaveObj(outputPath, worldCoords);
             }
+            else if (outputIsNwc)
+            {
+                EnsureParentDirectory(outputPath);
+                doc.Save(outputPath);
+            }
             else
             {
                 var exportOptions = new NwcJsonExportOptions
@@ -375,6 +391,12 @@ internal static class Program
             {
                 EnsureParentDirectory(explicitIfcPath);
                 doc.SaveIfc(explicitIfcPath, ifcExportOptions);
+            }
+
+            if (!string.IsNullOrEmpty(explicitNwcPath))
+            {
+                EnsureParentDirectory(explicitNwcPath);
+                doc.Save(explicitNwcPath);
             }
 
             if (!string.IsNullOrEmpty(explicitGlbPath))
@@ -478,6 +500,7 @@ internal static class Program
         string? explicitGlbPath,
         string? explicitObjPath,
         string? explicitIfcPath,
+        string? explicitNwcPath,
         string? explicitBcfPath,
         string? explicitViewpointsBcfPath,
         string? explicitClashHtmlPath,
@@ -534,6 +557,14 @@ internal static class Program
             EnsureParentDirectory(outputPath);
             assembly.SaveObj(outputPath, worldCoords);
         }
+        else if (outputPath.EndsWith(".nwc", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            var merged = NwcDocument.Create(
+                fileInfo: new NwcFileInfo { SourcePath = assembly.Name + ".rvt" },
+                meshes: assembly.AllMeshes);
+            merged.Save(outputPath);
+        }
         else
         {
             EnsureParentDirectory(outputPath);
@@ -541,6 +572,14 @@ internal static class Program
         }
 
         if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath, ifcOptions); }
+        if (!string.IsNullOrEmpty(explicitNwcPath))
+        {
+            EnsureParentDirectory(explicitNwcPath);
+            var merged = NwcDocument.Create(
+                fileInfo: new NwcFileInfo { SourcePath = assembly.Name + ".rvt" },
+                meshes: assembly.AllMeshes);
+            merged.Save(explicitNwcPath);
+        }
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
@@ -595,6 +634,7 @@ internal static class Program
         string? explicitGlbPath,
         string? explicitObjPath,
         string? explicitIfcPath,
+        string? explicitNwcPath,
         string? explicitBcfPath,
         string? explicitViewpointsBcfPath,
         string? explicitClashHtmlPath,
@@ -650,6 +690,14 @@ internal static class Program
             EnsureParentDirectory(outputPath);
             assembly.SaveObj(outputPath, worldCoords);
         }
+        else if (outputPath.EndsWith(".nwc", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            var merged = NwcDocument.Create(
+                fileInfo: new NwcFileInfo { SourcePath = assembly.Name + ".rvt" },
+                meshes: assembly.AllMeshes);
+            merged.Save(outputPath);
+        }
         else
         {
             EnsureParentDirectory(outputPath);
@@ -657,6 +705,14 @@ internal static class Program
         }
 
         if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath, ifcOptions); }
+        if (!string.IsNullOrEmpty(explicitNwcPath))
+        {
+            EnsureParentDirectory(explicitNwcPath);
+            var merged = NwcDocument.Create(
+                fileInfo: new NwcFileInfo { SourcePath = assembly.Name + ".rvt" },
+                meshes: assembly.AllMeshes);
+            merged.Save(explicitNwcPath);
+        }
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }

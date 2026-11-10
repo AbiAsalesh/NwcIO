@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NwcIO\NwcIO.csproj" />
+    <ProjectReference Include="..\..\src\NwcIO.Cli\NwcIO.Cli.csproj" />
   </ItemGroup>
 
 </Project>

@@ -249,4 +249,37 @@ public class RealFixtureTests
             }
         }
     }
-}
+
+    [Fact]
+    public void Save_RealNwcFixture_RoundtripsSuccessfully()
+        {
+            if (FixturePath is null)
+            {
+                return;
+            }
+
+            var original = NwcDocument.Open(FixturePath);
+            string tempNwc = Path.Combine(Path.GetTempPath(), $"roundtrip_{Guid.NewGuid():N}.nwc");
+
+            try
+            {
+                original.Save(tempNwc);
+                Assert.True(File.Exists(tempNwc));
+                Assert.True(new FileInfo(tempNwc).Length > 1000);
+
+                var reloaded = NwcDocument.Open(tempNwc);
+                Assert.Equal(original.FileInfo.SourcePath, reloaded.FileInfo.SourcePath);
+                Assert.Equal(original.Meshes.Count, reloaded.Meshes.Count);
+                Assert.Equal(original.Transforms.Count, reloaded.Transforms.Count);
+                Assert.Equal(original.Guids.Count, reloaded.Guids.Count);
+                Assert.Equal(original.SavedViewpoints.Count, reloaded.SavedViewpoints.Count);
+            }
+            finally
+            {
+                if (File.Exists(tempNwc))
+                {
+                    File.Delete(tempNwc);
+                }
+            }
+        }
+    }

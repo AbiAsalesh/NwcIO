@@ -1,0 +1,113 @@
+using NwcIO.Model;
+
+namespace NwcIO;
+
+/// <summary>
+/// A fluent builder for programmatically creating new <see cref="NwcDocument"/> instances.
+/// </summary>
+public sealed class NwcDocumentBuilder
+{
+    private readonly NwcFileInfo _fileInfo = new();
+    private readonly List<NwcMesh> _meshes = [];
+    private readonly List<NwcTransform> _transforms = [];
+    private readonly List<NwcSavedViewpoint> _viewpoints = [];
+    private readonly List<Guid> _guids = [];
+    private readonly List<NwcPropertyRecord> _propertyRecords = [];
+    private readonly List<NwcMaterial> _materials = [];
+    private NwcNode? _rootNode;
+
+    /// <summary>
+    /// Sets the source path, loader plugin, and options for the document.
+    /// </summary>
+    public NwcDocumentBuilder SetFileInfo(string sourcePath, string? loaderPlugin = "LcOpRevitExport", DateTime? timestampUtc = null)
+    {
+        _fileInfo.SourcePath = sourcePath;
+        _fileInfo.LoaderPlugin = loaderPlugin;
+        _fileInfo.SourceTimestampUtc = timestampUtc ?? DateTime.UtcNow;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a 3D polygon mesh to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddMesh(NwcMesh mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        _meshes.Add(mesh);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a spatial transform to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddTransform(NwcTransform transform)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+        _transforms.Add(transform);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a saved viewpoint and camera to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddSavedViewpoint(NwcSavedViewpoint viewpoint)
+    {
+        ArgumentNullException.ThrowIfNull(viewpoint);
+        _viewpoints.Add(viewpoint);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an element GUID to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddGuid(Guid id)
+    {
+        _guids.Add(id);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the root scene hierarchy node.
+    /// </summary>
+    public NwcDocumentBuilder SetRootNode(NwcNode rootNode)
+    {
+        _rootNode = rootNode;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a surface material to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddMaterial(NwcMaterial material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        _materials.Add(material);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a property record to the document.
+    /// </summary>
+    public NwcDocumentBuilder AddPropertyRecord(NwcPropertyRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        _propertyRecords.Add(record);
+        return this;
+    }
+
+    /// <summary>
+    /// Builds and returns the constructed <see cref="NwcDocument"/>.
+    /// </summary>
+    public NwcDocument Build()
+    {
+        return NwcDocument.Create(
+            fileInfo: _fileInfo,
+            meshes: _meshes,
+            transforms: _transforms,
+            savedViewpoints: _viewpoints,
+            guids: _guids,
+            propertyRecords: _propertyRecords,
+            materials: _materials,
+            rootNode: _rootNode);
+    }
+}

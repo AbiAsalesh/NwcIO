@@ -78,7 +78,7 @@ public sealed class NwcDocument
 
     internal NwcContainer Container { get; }
 
-    /// <summary>Opens and parses a Navisworks file.</summary>
+    /// <summary>Opens and parses a Navisworks file from disk.</summary>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="InvalidDataException">The file is not an LcUStream container.</exception>
     public static NwcDocument Open(string path, NwcReaderOptions? options = null)
@@ -88,9 +88,18 @@ public sealed class NwcDocument
             throw new FileNotFoundException($"Navisworks file not found: {path}", path);
         }
 
+        using var stream = File.OpenRead(path);
+        return Open(stream, options, Path.GetFileNameWithoutExtension(path));
+    }
+
+    /// <summary>Opens and parses a Navisworks file from a stream.</summary>
+    /// <exception cref="InvalidDataException">The stream is not an LcUStream container.</exception>
+    public static NwcDocument Open(Stream stream, NwcReaderOptions? options = null, string? fallbackName = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
         options ??= NwcReaderOptions.Default;
 
-        var container = NwcContainerReader.ReadFile(path);
+        var container = NwcContainerReader.Read(stream);
         StreamClassifier.ClassifyAll(container.Streams);
 
         var fileInfo = new NwcFileInfo();
@@ -103,9 +112,9 @@ public sealed class NwcDocument
         var records = new List<NwcPropertyRecord>();
         if (options.ReadPropertyRecords)
         {
-            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.SceneTree))
+            foreach (var s in container.Streams.Where(s => s.Kind == NwcStreamKind.SceneTree))
             {
-                var scanner = new PropertyRecordScanner(stream.Data);
+                var scanner = new PropertyRecordScanner(s.Data);
                 records.AddRange(scanner.Scan());
             }
         }
@@ -113,9 +122,9 @@ public sealed class NwcDocument
         var guids = new List<Guid>();
         if (options.ReadGuids)
         {
-            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.Guids))
+            foreach (var s in container.Streams.Where(s => s.Kind == NwcStreamKind.Guids))
             {
-                if (GuidTableParser.TryParse(stream, out var parsed))
+                if (GuidTableParser.TryParse(s, out var parsed))
                 {
                     guids.AddRange(parsed);
                 }
@@ -125,9 +134,9 @@ public sealed class NwcDocument
         var transforms = new List<NwcTransform>();
         if (options.ReadTransforms)
         {
-            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.Transforms))
+            foreach (var s in container.Streams.Where(s => s.Kind == NwcStreamKind.Transforms))
             {
-                transforms.AddRange(TransformParser.Parse(stream));
+                transforms.AddRange(TransformParser.Parse(s));
             }
         }
 
@@ -140,7 +149,7 @@ public sealed class NwcDocument
         NwcNode? rootNode = null;
         if (options.BuildSceneTree)
         {
-            string rootName = Path.GetFileNameWithoutExtension(fileInfo.SourcePath ?? path);
+            string rootName = Path.GetFileNameWithoutExtension(fileInfo.SourcePath ?? fallbackName ?? "Model");
             rootNode = SceneTreeBuilder.Build(rootName, records, transforms, guids);
         }
 
@@ -167,9 +176,9 @@ public sealed class NwcDocument
         var savedViewpoints = new List<NwcSavedViewpoint>();
         if (options.ReadSavedViewpoints)
         {
-            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.SavedViews))
+            foreach (var s in container.Streams.Where(s => s.Kind == NwcStreamKind.SavedViews))
             {
-                savedViewpoints.AddRange(ViewpointParser.Parse(stream));
+                savedViewpoints.AddRange(ViewpointParser.Parse(s));
             }
         }
 
@@ -179,6 +188,58 @@ public sealed class NwcDocument
         }
 
         return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, savedViewpoints, container);
+    }
+
+    /// <summary>
+    /// Creates a new <see cref="NwcDocument"/> programmatically from components.
+    /// </summary>
+    public static NwcDocument Create(
+        NwcFileInfo? fileInfo = null,
+        IEnumerable<NwcMesh>? meshes = null,
+        IEnumerable<NwcTransform>? transforms = null,
+        IEnumerable<NwcSavedViewpoint>? savedViewpoints = null,
+        IEnumerable<Guid>? guids = null,
+        IEnumerable<NwcPropertyRecord>? propertyRecords = null,
+        IEnumerable<NwcMaterial>? materials = null,
+        NwcNode? rootNode = null,
+        NwcXRefTable? xRefs = null,
+        NwcDbCacheDirectory? dbCache = null)
+    {
+        var fi = fileInfo ?? new NwcFileInfo { SourcePath = "Model.rvt", LoaderPlugin = "LcOpRevitExport", SourceTimestampUtc = DateTime.UtcNow };
+        var mList = meshes?.ToList() ?? [];
+        var tList = transforms?.ToList() ?? [];
+        var vList = savedViewpoints?.ToList() ?? [];
+        var gList = guids?.ToList() ?? [];
+        var pList = propertyRecords?.ToList() ?? [];
+        var matList = materials?.ToList() ?? [];
+
+        var container = new NwcContainer
+        {
+            Sections = [],
+            Streams = [],
+            FileLength = 0,
+            TrailingGap = 0,
+        };
+
+        return new NwcDocument(fi, pList, gList, tList, mList, matList, rootNode, xRefs, dbCache, vList, container);
+    }
+
+    /// <summary>Saves the document to an Autodesk Navisworks (.nwc) file.</summary>
+    public void Save(string path, string? header = null)
+    {
+        NwcWriter.Write(this, path, header);
+    }
+
+    /// <summary>Saves the document to an output stream in Autodesk Navisworks (.nwc) format.</summary>
+    public void Save(Stream stream, string? header = null)
+    {
+        NwcWriter.Write(this, stream, header);
+    }
+
+    /// <summary>Serializes the document to a byte array in Autodesk Navisworks (.nwc) format.</summary>
+    public byte[] ToByteArray(string? header = null)
+    {
+        return NwcWriter.WriteToBytes(this, header);
     }
 
     /// <summary>Exports 3D mesh geometry to a Wavefront OBJ file.</summary>

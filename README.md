@@ -12,7 +12,8 @@ Built clean-room following the architectural principles of [mahach666/RvtIO](htt
 
 ## What It Does
 
-- **Container Decompression**: Direct byte-stream parsing of `#LcUStream-V1.1` containers, continuous zlib decompression (`lichunk-008`, `lizlib`), and checksum gap framing without third-party libraries.
+- **Container Serialization & Decompression (`NwcWriter` / `NwcContainerReader`)**: Direct byte-stream writing and parsing of `#LcUStream-V1.1` containers, continuous zlib compression/decompression (`lichunk-008`, `lizlib`), and checksum gap framing without third-party libraries. Programmatically create, modify, and save `.nwc` files from code.
+- **Fluent Document Builder (`NwcDocumentBuilder`)**: Construct Navisworks documents from scratch with 3D polygon meshes, spatial transformation matrices, hierarchy trees, materials, element GUIDs, and camera viewpoints.
 - **Industry Foundation Classes (IFC2x3 & IFC4)**: Pure managed exporter generating ISO 10303-21 STEP physical files compliant with **IFC2x3 Coordination View V2.0** (`IfcFacetedBrep`, `IfcClosedShell`, `IfcFace`, `IfcPolyLoop`, `IfcCartesianPoint`) and modern **IFC4 Design Transfer / Reference View** with compact mesh tessellation (`IfcTriangulatedFaceSet`, `IfcCartesianPointList3D`) reducing file sizes by over 60%, spatial hierarchy (`IfcProject`, `IfcSite`, `IfcBuilding`, `IfcBuildingStorey`), element mapping (`IfcWall`, `IfcSlab`, `IfcColumn`, `IfcBeam`, `IfcReinforcingBar`, etc.), type product definitions (`IfcWallType`, `IfcSlabType`, `IfcColumnType`, `IfcReinforcingBarType`, etc. linked via `IfcRelDefinesByType`), surface styles (`IfcSurfaceStyle`, `IfcColourRgb`), property sets (`IfcPropertySet`, `IfcPropertySingleValue`), and buildingSMART 22-character GUID encoding.
 - **Hierarchical Scene Graph**: Reconstructs Navisworks selection tree (Model &rarr; Layers &rarr; Categories &rarr; Families &rarr; Types &rarr; Composite Elements &rarr; Geometry) with bound parameters and GUIDs.
 - **3D Spatial Transforms**: Decodes instance poses (double-precision translation vectors, unit rotation quaternions, local AABB bounding boxes) and generates analytic $4\times 4$ affine transformation matrices.
@@ -154,6 +155,9 @@ Console.WriteLine($"Materials:    {doc.Materials.Count}");
 Console.WriteLine($"GUIDs:        {doc.Guids.Count}");
 Console.WriteLine($"Transforms:   {doc.Transforms.Count}");
 
+// Save or clone back to Autodesk Navisworks (.nwc)
+doc.Save("cloned_model.nwc");
+
 // Export directly to IFC2x3, IFC4, GLB, OBJ, or JSON
 doc.SaveIfc("model.ifc"); // Default IFC2x3
 doc.SaveIfc("model_ifc4.ifc", new NwcIfcExportOptions
@@ -165,6 +169,46 @@ doc.SaveIfc("model_ifc4.ifc", new NwcIfcExportOptions
 doc.SaveGlb("model.glb", worldCoordinates: true);
 doc.SaveObj("model.obj", worldCoordinates: true);
 doc.SaveJson("model.json");
+```
+
+### Programmatic Document Creation (`NwcDocumentBuilder`)
+
+```csharp
+using NwcIO;
+using NwcIO.Model;
+
+// Construct a new Navisworks document from scratch
+var newDoc = new NwcDocumentBuilder()
+    .SetFileInfo("ArchitecturalModel.rvt", "LcOpRevitExport")
+    .AddMesh(new NwcMesh
+    {
+        Id = 1,
+        Name = "Concrete Slab",
+        Vertices = [new(0, 0, 0), new(10, 0, 0), new(10, 8, 0), new(0, 8, 0)],
+        Indices = [0, 1, 2, 2, 1, 3],
+        BoundingBox = new BoundingBox3d(new(0, 0, 0), new(10, 8, 0))
+    })
+    .AddTransform(new NwcTransform
+    {
+        Id = 100,
+        Translation = new Vector3d(0, 0, 3.2),
+        Rotation = Quaterniond.Identity
+    })
+    .AddSavedViewpoint(new NwcSavedViewpoint
+    {
+        Name = "Main Entry View",
+        Camera = new NwcCamera
+        {
+            Position = new Vector3d(5, -15, 12),
+            Rotation = Quaterniond.Identity,
+            FocalDistance = 20.0
+        }
+    })
+    .AddGuid(Guid.NewGuid())
+    .Build();
+
+// Save as a standard Navisworks .nwc file
+newDoc.Save("GeneratedModel.nwc");
 ```
 
 ### 3D Raycasting with BVH Spatial Index
