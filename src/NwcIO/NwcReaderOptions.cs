@@ -23,6 +23,9 @@ public sealed class NwcReaderOptions
     /// <summary>Extract materials, RGBA colors, and surface parameters (default: true).</summary>
     public bool ReadMaterials { get; set; } = true;
 
+    /// <summary>Parse saved viewpoints and camera orientation records (default: true).</summary>
+    public bool ReadSavedViewpoints { get; set; } = true;
+
     /// <summary>Keep the stream catalog (offsets, sizes, kinds) in the document (default: true).</summary>
     public bool KeepStreamCatalog { get; set; } = true;
 }

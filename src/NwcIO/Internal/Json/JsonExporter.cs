@@ -210,6 +210,65 @@ public static class JsonExporter
             writer.WriteEndObject();
         }
 
+        if (options.IncludeSavedViewpoints && document.SavedViewpoints.Count > 0)
+        {
+            writer.WriteStartArray("savedViewpoints");
+            foreach (var vp in document.SavedViewpoints)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", vp.Id.ToString("D"));
+                writer.WriteString("name", vp.Name);
+
+                writer.WriteStartObject("camera");
+                writer.WriteString("projection", vp.Camera.Projection.ToString());
+                writer.WriteNumber("fieldOfView", vp.Camera.FieldOfView);
+                writer.WriteNumber("focalDistance", vp.Camera.FocalDistance);
+                writer.WriteNumber("aspectRatio", vp.Camera.AspectRatio);
+                writer.WriteNumber("nearDistance", vp.Camera.NearDistance);
+                writer.WriteNumber("farDistance", vp.Camera.FarDistance);
+
+                writer.WriteStartObject("position");
+                writer.WriteNumber("x", vp.Camera.Position.X);
+                writer.WriteNumber("y", vp.Camera.Position.Y);
+                writer.WriteNumber("z", vp.Camera.Position.Z);
+                writer.WriteEndObject();
+
+                writer.WriteStartObject("rotation");
+                writer.WriteNumber("x", vp.Camera.Rotation.X);
+                writer.WriteNumber("y", vp.Camera.Rotation.Y);
+                writer.WriteNumber("z", vp.Camera.Rotation.Z);
+                writer.WriteNumber("w", vp.Camera.Rotation.W);
+                writer.WriteEndObject();
+
+                writer.WriteStartObject("direction");
+                writer.WriteNumber("x", vp.Camera.Direction.X);
+                writer.WriteNumber("y", vp.Camera.Direction.Y);
+                writer.WriteNumber("z", vp.Camera.Direction.Z);
+                writer.WriteEndObject();
+
+                writer.WriteStartObject("target");
+                writer.WriteNumber("x", vp.Camera.Target.X);
+                writer.WriteNumber("y", vp.Camera.Target.Y);
+                writer.WriteNumber("z", vp.Camera.Target.Z);
+                writer.WriteEndObject();
+
+                writer.WriteEndObject(); // camera
+
+                if (vp.Comments.Count > 0)
+                {
+                    writer.WriteStartArray("comments");
+                    foreach (var c in vp.Comments)
+                    {
+                        writer.WriteStringValue(c);
+                    }
+                    writer.WriteEndArray();
+                }
+
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
+
         if (options.IncludeStreamCatalog)
         {
             WriteStreamCatalog(writer, document);

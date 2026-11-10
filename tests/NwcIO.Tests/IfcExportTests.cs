@@ -86,6 +86,7 @@ public class IfcExportTests
             null,
             null,
             null,
+            Array.Empty<NwcSavedViewpoint>(),
             emptyContainer
         ]);
     }

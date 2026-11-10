@@ -28,6 +28,8 @@ internal static class Program
           --glb <file.glb>   Export 3D geometry and materials to glTF 2.0 Binary format (GLB)
           --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
           --bcf <file.bcfzip> Export cross-model clashes to buildingSMART BCF 2.1 zip archive
+          --viewpoints-bcf <file.bcfzip> Export saved viewpoints to buildingSMART BCF 2.1 zip archive
+          --viewpoints       List saved viewpoints and cameras to standard output
           --clash-html <file.html> Export interactive HTML clash detection report with matrix
           --local-coords     Export geometry in local coordinate space (default: world coordinates)
           --no-meshes        Disable 3D mesh geometry extraction
@@ -74,9 +76,11 @@ internal static class Program
         string? explicitGlbPath = null;
         string? explicitIfcPath = null;
         string? explicitBcfPath = null;
+        string? explicitViewpointsBcfPath = null;
         string? explicitClashHtmlPath = null;
         string? raycastArg = null;
         bool checkClashes = false;
+        bool listViewpoints = false;
         bool bvhStats = false;
         bool worldCoords = true;
         bool readMeshes = true;
@@ -156,6 +160,17 @@ internal static class Program
                     }
                     explicitBcfPath = args[++i];
                     break;
+                case "--viewpoints-bcf":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --viewpoints-bcf.");
+                        return 1;
+                    }
+                    explicitViewpointsBcfPath = args[++i];
+                    break;
+                case "--viewpoints":
+                    listViewpoints = true;
+                    break;
                 case "--clash-html":
                     if (i + 1 >= args.Length)
                     {
@@ -219,8 +234,8 @@ internal static class Program
         {
             return ProcessAssemblyDirectory(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
-                explicitBcfPath, explicitClashHtmlPath,
-                worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
+                explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
+                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, sw);
         }
 
         // Handle NWF assembly file
@@ -228,8 +243,8 @@ internal static class Program
         {
             return ProcessNwfAssembly(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
-                explicitBcfPath, explicitClashHtmlPath,
-                worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
+                explicitBcfPath, explicitViewpointsBcfPath, explicitClashHtmlPath,
+                worldCoords, checkClashes, listViewpoints, bvhStats, raycastArg, printReport, indent, sw);
         }
 
         // Single NWC/NWD document
@@ -344,6 +359,12 @@ internal static class Program
                 GetSingleAssembly().SaveBcf(explicitBcfPath);
             }
 
+            if (!string.IsNullOrEmpty(explicitViewpointsBcfPath))
+            {
+                EnsureParentDirectory(explicitViewpointsBcfPath);
+                doc.SaveViewpointsBcf(explicitViewpointsBcfPath);
+            }
+
             if (!string.IsNullOrEmpty(explicitClashHtmlPath))
             {
                 EnsureParentDirectory(explicitClashHtmlPath);
@@ -360,6 +381,11 @@ internal static class Program
         if (!string.IsNullOrEmpty(raycastArg))
         {
             ExecuteRaycastTest(doc.SpatialIndex, raycastArg);
+        }
+
+        if (listViewpoints)
+        {
+            PrintViewpoints(doc.SavedViewpoints);
         }
 
         sw.Stop();
@@ -383,6 +409,7 @@ internal static class Program
             Console.Error.WriteLine($"Vertices:         {totalVertices:N0}");
             Console.Error.WriteLine($"Triangles:        {totalTriangles:N0}");
             Console.Error.WriteLine($"Materials:        {doc.Materials.Count}");
+            Console.Error.WriteLine($"Saved viewpoints: {doc.SavedViewpoints.Count}");
             if (doc.XRefs is not null)
             {
                 Console.Error.WriteLine($"XRefs:            {doc.XRefs.References.Count}");
@@ -416,9 +443,11 @@ internal static class Program
         string? explicitObjPath,
         string? explicitIfcPath,
         string? explicitBcfPath,
+        string? explicitViewpointsBcfPath,
         string? explicitClashHtmlPath,
         bool worldCoords,
         bool checkClashes,
+        bool listViewpoints,
         bool bvhStats,
         string? raycastArg,
         bool printReport,
@@ -478,11 +507,17 @@ internal static class Program
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
+        if (!string.IsNullOrEmpty(explicitViewpointsBcfPath)) { EnsureParentDirectory(explicitViewpointsBcfPath); assembly.SaveViewpointsBcf(explicitViewpointsBcfPath); }
         if (!string.IsNullOrEmpty(explicitClashHtmlPath)) { EnsureParentDirectory(explicitClashHtmlPath); assembly.SaveClashReportHtml(explicitClashHtmlPath, clashes); }
 
         if (!string.IsNullOrEmpty(raycastArg))
         {
             ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
+        }
+
+        if (listViewpoints)
+        {
+            PrintViewpoints(assembly.SavedViewpoints);
         }
 
         sw.Stop();
@@ -494,6 +529,7 @@ internal static class Program
             Console.Error.WriteLine($"Models:           {assembly.Models.Count}");
             Console.Error.WriteLine($"Total Meshes:     {assembly.AllMeshes.Count}");
             Console.Error.WriteLine($"Total Materials:  {assembly.AllMaterials.Count}");
+            Console.Error.WriteLine($"Saved viewpoints: {assembly.SavedViewpoints.Count}");
             Console.Error.WriteLine($"Bounding Box:     {assembly.BoundingBox}");
             if (bvhStats)
             {
@@ -523,9 +559,11 @@ internal static class Program
         string? explicitObjPath,
         string? explicitIfcPath,
         string? explicitBcfPath,
+        string? explicitViewpointsBcfPath,
         string? explicitClashHtmlPath,
         bool worldCoords,
         bool checkClashes,
+        bool listViewpoints,
         bool bvhStats,
         string? raycastArg,
         bool printReport,
@@ -584,11 +622,17 @@ internal static class Program
         if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
         if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
+        if (!string.IsNullOrEmpty(explicitViewpointsBcfPath)) { EnsureParentDirectory(explicitViewpointsBcfPath); assembly.SaveViewpointsBcf(explicitViewpointsBcfPath); }
         if (!string.IsNullOrEmpty(explicitClashHtmlPath)) { EnsureParentDirectory(explicitClashHtmlPath); assembly.SaveClashReportHtml(explicitClashHtmlPath, clashes); }
 
         if (!string.IsNullOrEmpty(raycastArg))
         {
             ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
+        }
+
+        if (listViewpoints)
+        {
+            PrintViewpoints(assembly.SavedViewpoints);
         }
 
         sw.Stop();
@@ -599,6 +643,7 @@ internal static class Program
             Console.Error.WriteLine($"NWF File:         {nwfPath}");
             Console.Error.WriteLine($"Loaded Models:    {assembly.Models.Count}");
             Console.Error.WriteLine($"Total Meshes:     {assembly.AllMeshes.Count}");
+            Console.Error.WriteLine($"Saved viewpoints: {assembly.SavedViewpoints.Count}");
             Console.Error.WriteLine($"Bounding Box:     {assembly.BoundingBox}");
             if (clashes is not null)
             {
@@ -614,6 +659,28 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static void PrintViewpoints(IReadOnlyList<NwcSavedViewpoint> viewpoints)
+    {
+        Console.WriteLine($"=== Saved Viewpoints ({viewpoints.Count}) ===");
+        if (viewpoints.Count == 0)
+        {
+            Console.WriteLine("No saved viewpoints found.");
+            return;
+        }
+
+        for (int i = 0; i < viewpoints.Count; i++)
+        {
+            var vp = viewpoints[i];
+            var cam = vp.Camera;
+            Console.WriteLine(FormattableString.Invariant(
+                $"[{i + 1}] \"{vp.Name}\" ({cam.Projection}) Pos: {cam.Position} Dir: {cam.Direction} Up: {cam.Up} Target: {cam.Target} FOV: {cam.FieldOfView:F1}° FocalDist: {cam.FocalDistance:F2}"));
+            if (vp.Comments.Count > 0)
+            {
+                Console.WriteLine($"     Comments: {string.Join("; ", vp.Comments)}");
+            }
+        }
     }
 
     private static void ExecuteRaycastTest(NwcSpatialIndex index, string coords)

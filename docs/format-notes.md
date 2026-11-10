@@ -199,3 +199,27 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Responsive dark-theme BIM UI with Emerald (`#22C55E`) and Azure (`#3B82F6`) accent branding.
   - Discipline cross-clash matrix table ($M_i \times M_j$) showing pairwise conflict density across all contributing models, with clickable cell filtering.
   - Interactive table featuring live search filtering and client-side column sorting by clash index, model names, volumes, and bounding boxes.
+
+### 2.13 Saved Viewpoints & 3D Camera Reverse Engineering
+- **Container Identification**:
+  - Saved viewpoint streams are identified by the presence of marker Tag `517` (`0x0205`), accompanied by consecutive IEEE 754 double sequences representing 3D coordinates and rotation quaternions.
+- **Binary Layout of Viewpoint Records**:
+  - String record prefix: Length-prefixed 32-bit integer followed by UTF-8 (or CP866 / CP1251 in localized releases) display name string (e.g., `"Общий вид здания"`, `"Navisworks коллизии"`).
+  - Header tag: `517` (`0x00000205`), followed by `int32 1`, `int32 0`.
+  - Eye position: 3 consecutive 64-bit IEEE 754 doubles at `offset + 12, +20, +28` ($X, Y, Z$ in model world coordinates).
+  - Orientation quaternion: 4 consecutive 64-bit IEEE 754 doubles at `offset + 36, +44, +52, +60` ($Q_X, Q_Y, Q_Z, Q_W$), where $Q_X^2 + Q_Y^2 + Q_Z^2 + Q_W^2 \approx 1.0$.
+  - Optical parameters:
+    - `offset + 68`: Viewport aspect ratio (width / height, double).
+    - `offset + 76`: Focal distance to target / look-at center point (double).
+    - `offset + 84`: View height / frustum vertical extent (double).
+    - `offset + 92`: Near clipping plane distance (double).
+- **Coordinate Frame & Vector Algebra**:
+  - Canonical view direction vector in camera local space is along $-Z$ (`(0, 0, -1)`).
+  - Canonical up vector in camera local space is along $+Y$ (`(0, 1, 0)`).
+  - World viewing direction: $\vec{D} = Q \cdot (0, 0, -1) \cdot Q^*$.
+  - World up vector: $\vec{U} = Q \cdot (0, 1, 0) \cdot Q^*$.
+  - 3D target / look-at point: $\vec{T} = \vec{P} + \vec{D} \times d_{\text{focal}}$.
+- **glTF 2.0 & BCF Integration**:
+  - Serialized into glTF 2.0 `cameras` array with perspective projection and vertical field of view (`yfov = 2 * atan(tan(fov/2) / aspect)`).
+  - Placed as camera scene nodes with `translation` ($\vec{P}$) and `rotation` ($Q$).
+  - Exported to buildingSMART BCF 2.1 archives with `PerspectiveCamera` and `OrthogonalCamera` visualization blocks.

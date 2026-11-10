@@ -19,6 +19,7 @@ public sealed class NwcDocument
         NwcNode? rootNode,
         NwcXRefTable? xRefs,
         NwcDbCacheDirectory? dbCache,
+        IReadOnlyList<NwcSavedViewpoint> savedViewpoints,
         NwcContainer container)
     {
         FileInfo = fileInfo;
@@ -30,6 +31,7 @@ public sealed class NwcDocument
         RootNode = rootNode;
         XRefs = xRefs;
         DbCache = dbCache;
+        SavedViewpoints = savedViewpoints;
         Container = container;
     }
 
@@ -58,6 +60,16 @@ public sealed class NwcDocument
 
     /// <summary>Database cache directory parsed from LcOpDBCache streams.</summary>
     public NwcDbCacheDirectory? DbCache { get; }
+
+    /// <summary>Saved viewpoints and camera views extracted from container viewpoint streams.</summary>
+    public IReadOnlyList<NwcSavedViewpoint> SavedViewpoints { get; }
+
+    /// <summary>Gets the total 3D bounding box over all meshes in the document.</summary>
+    public BoundingBox3d BoundingBox => SpatialIndex.Bounds;
+
+    /// <summary>Gets the primary/default viewpoint of the document.</summary>
+    public NwcSavedViewpoint? DefaultViewpoint =>
+        SavedViewpoints.Count > 0 ? SavedViewpoints[0] : (!BoundingBox.IsEmpty ? NwcSavedViewpoint.CreateDefault(BoundingBox) : null);
 
     private Model.Spatial.NwcSpatialIndex? _spatialIndex;
 
@@ -152,12 +164,21 @@ public sealed class NwcDocument
             dbCache = DbCacheParser.Parse(dbCacheStream);
         }
 
+        var savedViewpoints = new List<NwcSavedViewpoint>();
+        if (options.ReadSavedViewpoints)
+        {
+            foreach (var stream in container.Streams.Where(s => s.Kind == NwcStreamKind.SavedViews))
+            {
+                savedViewpoints.AddRange(ViewpointParser.Parse(stream));
+            }
+        }
+
         if (!options.KeepStreamCatalog)
         {
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, savedViewpoints, container);
     }
 
     /// <summary>Exports 3D mesh geometry to a Wavefront OBJ file.</summary>
@@ -175,13 +196,13 @@ public sealed class NwcDocument
     /// <summary>Exports 3D mesh geometry, materials, and scene hierarchy to a binary glTF 2.0 file (.glb).</summary>
     public void SaveGlb(string path, bool worldCoordinates = true)
     {
-        Internal.Export.GlbExporter.WriteFile(Meshes, Materials, path, worldCoordinates, FileInfo.LoaderPlugin);
+        Internal.Export.GlbExporter.WriteFile(Meshes, Materials, path, worldCoordinates, FileInfo.LoaderPlugin, SavedViewpoints);
     }
 
     /// <summary>Exports 3D mesh geometry, materials, and scene hierarchy to a binary glTF 2.0 stream (.glb).</summary>
     public void SaveGlb(Stream stream, bool worldCoordinates = true)
     {
-        Internal.Export.GlbExporter.Write(Meshes, Materials, stream, worldCoordinates, FileInfo.LoaderPlugin);
+        Internal.Export.GlbExporter.Write(Meshes, Materials, stream, worldCoordinates, FileInfo.LoaderPlugin, SavedViewpoints);
     }
 
     /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to an IFC2x3 STEP file (.ifc).</summary>
@@ -194,6 +215,18 @@ public sealed class NwcDocument
     public void SaveIfc(TextWriter writer, NwcIfcExportOptions? options = null)
     {
         Internal.Export.IfcExporter.Write(this, writer, options);
+    }
+
+    /// <summary>Exports saved viewpoints to a buildingSMART BCF 2.1 zip archive (.bcfzip).</summary>
+    public void SaveViewpointsBcf(string path)
+    {
+        Internal.Export.BcfExporter.WriteViewpointsFile(SavedViewpoints, path, Path.GetFileNameWithoutExtension(FileInfo.SourcePath ?? "Model"));
+    }
+
+    /// <summary>Exports saved viewpoints to a buildingSMART BCF 2.1 zip stream.</summary>
+    public void SaveViewpointsBcf(Stream stream)
+    {
+        Internal.Export.BcfExporter.WriteViewpoints(SavedViewpoints, stream, Path.GetFileNameWithoutExtension(FileInfo.SourcePath ?? "Model"));
     }
 
     /// <summary>Exports the document to a JSON file.</summary>

@@ -20,6 +20,9 @@ public sealed class NwcJsonExportOptions
     /// <summary>Include materials and surface colors in the JSON export (default: true).</summary>
     public bool IncludeMaterials { get; set; } = true;
 
+    /// <summary>Include saved viewpoints and cameras in the JSON export (default: true).</summary>
+    public bool IncludeSavedViewpoints { get; set; } = true;
+
     /// <summary>Include the per-stream container catalog in the output (default: false).</summary>
     public bool IncludeStreamCatalog { get; set; }
 }

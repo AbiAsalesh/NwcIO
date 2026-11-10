@@ -123,6 +123,32 @@ public class RealFixtureTests
         Assert.NotEmpty(doc.DbCache.Entries);
         Assert.NotNull(doc.DbCache.Find("LcOpNwdGeometry"));
 
+        // Section 2.13: Verify Saved Viewpoints and Cameras
+        Assert.NotEmpty(doc.SavedViewpoints);
+        Assert.True(doc.SavedViewpoints.Count >= 10, $"Expected >= 10 viewpoints, got {doc.SavedViewpoints.Count}");
+        Assert.NotNull(doc.DefaultViewpoint);
+        Assert.Contains(doc.SavedViewpoints, vp => !string.IsNullOrWhiteSpace(vp.Name));
+        Assert.All(doc.SavedViewpoints, vp =>
+        {
+            Assert.True(vp.Camera.Rotation.IsNormalized());
+            Assert.True(vp.Camera.FocalDistance > 0);
+            Assert.True(vp.Camera.AspectRatio > 0);
+        });
+
+        // Verify Saved Viewpoints BCF export
+        string tempVpBcf = Path.Combine(Path.GetTempPath(), $"viewpoints_{Guid.NewGuid():N}.bcfzip");
+        try
+        {
+            doc.SaveViewpointsBcf(tempVpBcf);
+            Assert.True(File.Exists(tempVpBcf));
+            var vpBcfInfo = new FileInfo(tempVpBcf);
+            Assert.True(vpBcfInfo.Length > 500, $"Expected viewpoints BCF > 500 bytes, got {vpBcfInfo.Length}");
+        }
+        finally
+        {
+            if (File.Exists(tempVpBcf)) File.Delete(tempVpBcf);
+        }
+
         // Milestone 5: Verify Spatial Acceleration Index (BVH)
         var spatial = doc.SpatialIndex;
         Assert.NotNull(spatial);

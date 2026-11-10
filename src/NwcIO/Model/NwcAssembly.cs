@@ -19,6 +19,13 @@ public sealed class NwcAssembly
     public IReadOnlyList<NwcMaterial> AllMaterials { get; }
     public BoundingBox3d BoundingBox { get; }
 
+    /// <summary>Saved viewpoints aggregated from contributing models or generated for the assembly.</summary>
+    public IReadOnlyList<NwcSavedViewpoint> SavedViewpoints { get; }
+
+    /// <summary>Gets the primary/default viewpoint of the federated assembly.</summary>
+    public NwcSavedViewpoint? DefaultViewpoint =>
+        SavedViewpoints.Count > 0 ? SavedViewpoints[0] : (!BoundingBox.IsEmpty ? NwcSavedViewpoint.CreateDefault(BoundingBox, $"{Name} Overview") : null);
+
     /// <summary>
     /// Gets the spatial acceleration index (BVH) over all meshes across all contributing models.
     /// </summary>
@@ -30,7 +37,8 @@ public sealed class NwcAssembly
         NwcNode rootNode,
         IReadOnlyList<NwcMesh> allMeshes,
         IReadOnlyList<NwcMaterial> allMaterials,
-        BoundingBox3d boundingBox)
+        BoundingBox3d boundingBox,
+        IReadOnlyList<NwcSavedViewpoint> savedViewpoints)
     {
         Name = name;
         Models = models;
@@ -38,6 +46,7 @@ public sealed class NwcAssembly
         AllMeshes = allMeshes;
         AllMaterials = allMaterials;
         BoundingBox = boundingBox;
+        SavedViewpoints = savedViewpoints;
     }
 
     /// <summary>
@@ -97,6 +106,18 @@ public sealed class NwcAssembly
             }
         }
 
+        var allViewpoints = new List<NwcSavedViewpoint>();
+        foreach (var doc in modelList)
+        {
+            allViewpoints.AddRange(doc.SavedViewpoints);
+        }
+
+        if (allViewpoints.Count == 0 && !totalBox.IsEmpty)
+        {
+            allViewpoints.Add(NwcSavedViewpoint.CreateDefault(totalBox, $"{name} Overview"));
+            allViewpoints.Add(NwcSavedViewpoint.CreateTop(totalBox, $"{name} Top View"));
+        }
+
         var rootNode = new NwcNode
         {
             Id = 0,
@@ -105,7 +126,7 @@ public sealed class NwcAssembly
         };
         rootNode.Children.AddRange(rootChildren);
 
-        return new NwcAssembly(name, modelList, rootNode, allMeshes, matMap.Values.ToList(), totalBox);
+        return new NwcAssembly(name, modelList, rootNode, allMeshes, matMap.Values.ToList(), totalBox, allViewpoints);
     }
 
     /// <summary>
@@ -245,7 +266,7 @@ public sealed class NwcAssembly
     /// <summary>Exports the entire federated assembly to a binary glTF 2.0 file (.glb).</summary>
     public void SaveGlb(string path, bool worldCoordinates = true)
     {
-        GlbExporter.WriteFile(AllMeshes, AllMaterials, path, worldCoordinates, "NwcIO Assembly");
+        GlbExporter.WriteFile(AllMeshes, AllMaterials, path, worldCoordinates, "NwcIO Assembly", SavedViewpoints);
     }
 
     /// <summary>Exports the entire federated assembly to a Wavefront OBJ file.</summary>
@@ -284,6 +305,26 @@ public sealed class NwcAssembly
     {
         clashes ??= FindClashes();
         BcfExporter.Write(clashes, stream, Name);
+    }
+
+    /// <summary>
+    /// Exports saved viewpoints of the assembly to a buildingSMART BCF 2.1 zip archive (.bcfzip).
+    /// </summary>
+    /// <param name="path">Destination .bcf or .bcfzip file path.</param>
+    /// <param name="viewpoints">Optional pre-computed viewpoints list; if null, <see cref="SavedViewpoints"/> is used.</param>
+    public void SaveViewpointsBcf(string path, IReadOnlyList<NwcSavedViewpoint>? viewpoints = null)
+    {
+        viewpoints ??= SavedViewpoints;
+        BcfExporter.WriteViewpointsFile(viewpoints, path, Name);
+    }
+
+    /// <summary>
+    /// Exports saved viewpoints of the assembly to a buildingSMART BCF 2.1 zip stream.
+    /// </summary>
+    public void SaveViewpointsBcf(Stream stream, IReadOnlyList<NwcSavedViewpoint>? viewpoints = null)
+    {
+        viewpoints ??= SavedViewpoints;
+        BcfExporter.WriteViewpoints(viewpoints, stream, Name);
     }
 
     /// <summary>
@@ -339,6 +380,25 @@ public sealed class NwcAssembly
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+
+        if (SavedViewpoints.Count > 0)
+        {
+            writer.WriteStartArray("savedViewpoints");
+            foreach (var vp in SavedViewpoints)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", vp.Id.ToString("D"));
+                writer.WriteString("name", vp.Name);
+                writer.WriteString("projection", vp.Camera.Projection.ToString());
+                writer.WriteNumber("fieldOfView", vp.Camera.FieldOfView);
+                writer.WriteNumber("focalDistance", vp.Camera.FocalDistance);
+                writer.WriteString("position", vp.Camera.Position.ToString());
+                writer.WriteString("direction", vp.Camera.Direction.ToString());
+                writer.WriteString("target", vp.Camera.Target.ToString());
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
 
         writer.WriteEndObject();
     }

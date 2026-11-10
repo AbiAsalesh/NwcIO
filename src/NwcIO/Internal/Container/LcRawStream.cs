@@ -20,6 +20,8 @@ public enum NwcStreamKind
     XRefJson,
     /// <summary>LcOpDBCache products footer.</summary>
     DbCache,
+    /// <summary>Saved viewpoints and cameras (tag 517 with position and quaternion records).</summary>
+    SavedViews,
 }
 
 /// <summary>

@@ -27,14 +27,15 @@ public static class GlbExporter
         IReadOnlyList<NwcMaterial> materials,
         string path,
         bool worldCoordinates = true,
-        string? generatorName = null)
+        string? generatorName = null,
+        IReadOnlyList<NwcSavedViewpoint>? viewpoints = null)
     {
         ArgumentNullException.ThrowIfNull(meshes);
         ArgumentNullException.ThrowIfNull(materials);
         ArgumentNullException.ThrowIfNull(path);
 
         using var fs = File.Create(path);
-        Write(meshes, materials, fs, worldCoordinates, generatorName);
+        Write(meshes, materials, fs, worldCoordinates, generatorName, viewpoints);
     }
 
     public static void Write(
@@ -42,7 +43,8 @@ public static class GlbExporter
         IReadOnlyList<NwcMaterial> materials,
         Stream output,
         bool worldCoordinates = true,
-        string? generatorName = null)
+        string? generatorName = null,
+        IReadOnlyList<NwcSavedViewpoint>? viewpoints = null)
     {
         ArgumentNullException.ThrowIfNull(meshes);
         ArgumentNullException.ThrowIfNull(materials);
@@ -214,7 +216,8 @@ public static class GlbExporter
             accessors,
             bufferViews,
             binData.Length,
-            generatorName ?? "NwcIO glTF 2.0 Exporter");
+            generatorName ?? "NwcIO glTF 2.0 Exporter",
+            viewpoints);
 
         // Align JSON chunk to 4 bytes with 0x20 spaces as per glTF spec
         int jsonPadding = (4 - (jsonData.Length % 4)) % 4;
@@ -253,7 +256,8 @@ public static class GlbExporter
         List<AccessorDef> accessors,
         List<BufferViewDef> bufferViews,
         int binByteLength,
-        string generator)
+        string generator,
+        IReadOnlyList<NwcSavedViewpoint>? viewpoints = null)
     {
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = false }))
@@ -269,11 +273,14 @@ public static class GlbExporter
             // scene
             writer.WriteNumber("scene", 0);
 
+            int camCount = viewpoints?.Count ?? 0;
+            int totalNodes = meshes.Count + camCount;
+
             // scenes
             writer.WriteStartArray("scenes");
             writer.WriteStartObject();
             writer.WriteStartArray("nodes");
-            for (int i = 0; i < meshes.Count; i++)
+            for (int i = 0; i < totalNodes; i++)
             {
                 writer.WriteNumberValue(i);
             }
@@ -292,7 +299,74 @@ public static class GlbExporter
                 writer.WriteEndObject();
             }
 
+            if (viewpoints is not null)
+            {
+                for (int i = 0; i < viewpoints.Count; i++)
+                {
+                    var vp = viewpoints[i];
+                    var cam = vp.Camera;
+                    writer.WriteStartObject();
+                    writer.WriteString("name", vp.Name);
+                    writer.WriteNumber("camera", i);
+
+                    writer.WriteStartArray("translation");
+                    writer.WriteNumberValue(cam.Position.X);
+                    writer.WriteNumberValue(cam.Position.Y);
+                    writer.WriteNumberValue(cam.Position.Z);
+                    writer.WriteEndArray();
+
+                    writer.WriteStartArray("rotation");
+                    writer.WriteNumberValue(cam.Rotation.X);
+                    writer.WriteNumberValue(cam.Rotation.Y);
+                    writer.WriteNumberValue(cam.Rotation.Z);
+                    writer.WriteNumberValue(cam.Rotation.W);
+                    writer.WriteEndArray();
+
+                    writer.WriteEndObject();
+                }
+            }
+
             writer.WriteEndArray();
+
+            // cameras
+            if (viewpoints is not null && viewpoints.Count > 0)
+            {
+                writer.WriteStartArray("cameras");
+                for (int i = 0; i < viewpoints.Count; i++)
+                {
+                    var vp = viewpoints[i];
+                    var cam = vp.Camera;
+                    writer.WriteStartObject();
+                    writer.WriteString("name", vp.Name);
+
+                    if (cam.Projection == NwcCameraProjection.Orthographic)
+                    {
+                        writer.WriteString("type", "orthographic");
+                        writer.WriteStartObject("orthographic");
+                        double xmag = Math.Max(1.0, cam.FocalDistance * 0.5);
+                        double ymag = xmag / (cam.AspectRatio > 0 ? cam.AspectRatio : 1.0);
+                        writer.WriteNumber("xmag", xmag);
+                        writer.WriteNumber("ymag", ymag);
+                        writer.WriteNumber("zfar", cam.FarDistance > 0 ? cam.FarDistance : 10000.0);
+                        writer.WriteNumber("znear", cam.NearDistance > 0 ? cam.NearDistance : 0.1);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        writer.WriteString("type", "perspective");
+                        writer.WriteStartObject("perspective");
+                        writer.WriteNumber("aspectRatio", cam.AspectRatio > 0 ? cam.AspectRatio : 1.0);
+                        double yfovRad = cam.FieldOfView * (Math.PI / 180.0);
+                        writer.WriteNumber("yfov", yfovRad > 0 ? yfovRad : 1.04719755);
+                        writer.WriteNumber("zfar", cam.FarDistance > 0 ? cam.FarDistance : 10000.0);
+                        writer.WriteNumber("znear", cam.NearDistance > 0 ? cam.NearDistance : 0.1);
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+            }
 
             // meshes
             writer.WriteStartArray("meshes");

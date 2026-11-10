@@ -102,7 +102,35 @@ public static class StreamClassifier
             }
         }
 
+        // Saved viewpoints and cameras (starts with tag 517 + camera quaternion)
+        if (data.Length >= 120 && IsSavedViewsStream(data))
+        {
+            return NwcStreamKind.SavedViews;
+        }
+
         return NwcStreamKind.Unknown;
+    }
+
+    private static bool IsSavedViewsStream(byte[] data)
+    {
+        int limit = Math.Min(data.Length - 96, 512);
+        for (int i = 0; i <= limit; i += 4)
+        {
+            if (ReadInt32(data, i) == 517 && ReadInt32(data, i + 4) == 1)
+            {
+                // Check if quaternion at i + 36 is approximately normalized
+                double qx = BinaryPrimitives.ReadDoubleLittleEndian(data.AsSpan(i + 36));
+                double qy = BinaryPrimitives.ReadDoubleLittleEndian(data.AsSpan(i + 44));
+                double qz = BinaryPrimitives.ReadDoubleLittleEndian(data.AsSpan(i + 52));
+                double qw = BinaryPrimitives.ReadDoubleLittleEndian(data.AsSpan(i + 60));
+                double norm = qx * qx + qy * qy + qz * qz + qw * qw;
+                if (Math.Abs(norm - 1.0) < 0.005 && Math.Abs(qw) > 0.0001)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static int ReadInt32(byte[] data, int offset) =>
