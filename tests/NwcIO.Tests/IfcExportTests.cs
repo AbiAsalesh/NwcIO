@@ -303,4 +303,21 @@ public class IfcExportTests
         Assert.Contains("IFCCOLUMNTYPE(", ifc);
         Assert.Contains("IFCRELDEFINESBYTYPE(", ifc);
     }
+
+    [Fact]
+    public void ToIfcString_EmitsValidStepStringDirectly()
+    {
+        var doc = CreateSyntheticDocument("Стена монолитная", "Бетон B25");
+        string ifc = doc.ToIfcString(new NwcIfcExportOptions
+        {
+            SchemaVersion = NwcIfcSchemaVersion.Ifc4,
+            UseTessellationInIfc4 = true
+        });
+
+        Assert.NotEmpty(ifc);
+        Assert.Contains("ISO-10303-21;", ifc);
+        Assert.Contains("FILE_SCHEMA(('IFC4'));", ifc);
+        Assert.Contains("IFCTRIANGULATEDFACESET(", ifc);
+        Assert.Contains("END-ISO-10303-21;", ifc);
+    }
 }

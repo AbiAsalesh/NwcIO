@@ -266,16 +266,24 @@ public sealed class NwcDocument
         Internal.Export.GlbExporter.Write(Meshes, Materials, stream, worldCoordinates, FileInfo.LoaderPlugin, SavedViewpoints);
     }
 
-    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to an IFC2x3 STEP file (.ifc).</summary>
+    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to an IFC STEP physical file (.ifc).</summary>
     public void SaveIfc(string path, NwcIfcExportOptions? options = null)
     {
         Internal.Export.IfcExporter.WriteFile(this, path, options);
     }
 
-    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to a <see cref="TextWriter"/> in IFC2x3 format.</summary>
+    /// <summary>Exports 3D mesh geometry, materials, spatial structure, and properties to a <see cref="TextWriter"/> in IFC format.</summary>
     public void SaveIfc(TextWriter writer, NwcIfcExportOptions? options = null)
     {
         Internal.Export.IfcExporter.Write(this, writer, options);
+    }
+
+    /// <summary>Serializes 3D mesh geometry, materials, spatial structure, and properties to an IFC STEP physical string.</summary>
+    public string ToIfcString(NwcIfcExportOptions? options = null)
+    {
+        using var sw = new StringWriter();
+        SaveIfc(sw, options);
+        return sw.ToString();
     }
 
     /// <summary>Exports saved viewpoints to a buildingSMART BCF 2.1 zip archive (.bcfzip).</summary>
