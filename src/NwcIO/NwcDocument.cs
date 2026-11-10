@@ -17,6 +17,8 @@ public sealed class NwcDocument
         IReadOnlyList<NwcMesh> meshes,
         IReadOnlyList<NwcMaterial> materials,
         NwcNode? rootNode,
+        NwcXRefTable? xRefs,
+        NwcDbCacheDirectory? dbCache,
         NwcContainer container)
     {
         FileInfo = fileInfo;
@@ -26,6 +28,8 @@ public sealed class NwcDocument
         Meshes = meshes;
         Materials = materials;
         RootNode = rootNode;
+        XRefs = xRefs;
+        DbCache = dbCache;
         Container = container;
     }
 
@@ -48,6 +52,17 @@ public sealed class NwcDocument
 
     /// <summary>Root of the hierarchical scene graph tree (matching Navisworks selection tree).</summary>
     public NwcNode? RootNode { get; }
+
+    /// <summary>External references (XRefs) parsed from XRefJson streams.</summary>
+    public NwcXRefTable? XRefs { get; }
+
+    /// <summary>Database cache directory parsed from LcOpDBCache streams.</summary>
+    public NwcDbCacheDirectory? DbCache { get; }
+
+    private Model.Spatial.NwcSpatialIndex? _spatialIndex;
+
+    /// <summary>3D spatial acceleration index (BVH) over meshes for raycasting and spatial selection.</summary>
+    public Model.Spatial.NwcSpatialIndex SpatialIndex => _spatialIndex ??= new Model.Spatial.NwcSpatialIndex(Meshes);
 
     internal NwcContainer Container { get; }
 
@@ -123,12 +138,26 @@ public sealed class NwcDocument
             materials.AddRange(MaterialParser.Parse(records, meshes, rootNode));
         }
 
+        NwcXRefTable? xRefs = null;
+        var xrefStream = container.Streams.FirstOrDefault(s => s.Kind == NwcStreamKind.XRefJson);
+        if (xrefStream is not null)
+        {
+            xRefs = XRefTableParser.Parse(xrefStream);
+        }
+
+        NwcDbCacheDirectory? dbCache = null;
+        var dbCacheStream = container.Streams.FirstOrDefault(s => s.Kind == NwcStreamKind.DbCache);
+        if (dbCacheStream is not null)
+        {
+            dbCache = DbCacheParser.Parse(dbCacheStream);
+        }
+
         if (!options.KeepStreamCatalog)
         {
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, meshes, materials, rootNode, xRefs, dbCache, container);
     }
 
     /// <summary>Exports 3D mesh geometry to a Wavefront OBJ file.</summary>

@@ -1,0 +1,131 @@
+using NwcIO.Model;
+using Xunit;
+
+namespace NwcIO.Tests;
+
+public class AssemblyTests
+{
+    [Fact]
+    public void Create_CombinesMultipleDocumentsIntoFederatedAssembly()
+    {
+        var meshA = new NwcMesh
+        {
+            Id = 1,
+            Vertices = [new(0, 0, 0), new(1, 0, 0), new(0, 1, 0)],
+            Indices = [0, 1, 2],
+            BoundingBox = new BoundingBox3d(new(0, 0, 0), new(1, 1, 0)),
+        };
+
+        var meshB = new NwcMesh
+        {
+            Id = 2,
+            Vertices = [new(10, 0, 0), new(11, 0, 0), new(10, 1, 0)],
+            Indices = [0, 1, 2],
+            BoundingBox = new BoundingBox3d(new(10, 0, 0), new(11, 1, 0)),
+        };
+
+        var docA = CreateMockDocument("Model_A.rvt", [meshA]);
+        var docB = CreateMockDocument("Model_B.rvt", [meshB]);
+
+        var assembly = NwcAssembly.Create("FederatedCampus", docA, docB);
+
+        Assert.Equal("FederatedCampus", assembly.Name);
+        Assert.Equal(2, assembly.Models.Count);
+        Assert.Equal(2, assembly.AllMeshes.Count);
+        Assert.Equal(2, assembly.RootNode.Children.Count);
+
+        // Overall bounds should encompass both meshes from X=0 to X=11
+        Assert.Equal(0.0, assembly.BoundingBox.Min.X);
+        Assert.Equal(11.0, assembly.BoundingBox.Max.X);
+
+        // BVH Spatial index on assembly
+        var hits = assembly.SpatialIndex.QueryBox(new BoundingBox3d(new(9, -1, -1), new(12, 2, 1)));
+        Assert.Single(hits);
+        Assert.Equal(2, hits[0].Id);
+    }
+
+    [Fact]
+    public void FindClashes_DetectsInterferingMeshes()
+    {
+        // Two meshes in different documents occupying the same volume [0, 1]^3
+        var meshA = new NwcMesh
+        {
+            Id = 10,
+            Vertices = [new(0, 0, 0), new(2, 0, 0), new(0, 2, 0)],
+            Indices = [0, 1, 2],
+            BoundingBox = new BoundingBox3d(new(0, 0, 0), new(2, 2, 0)),
+        };
+
+        var meshB = new NwcMesh
+        {
+            Id = 20,
+            Vertices = [new(1, 1, 0), new(3, 1, 0), new(1, 3, 0)],
+            Indices = [0, 1, 2],
+            BoundingBox = new BoundingBox3d(new(1, 1, 0), new(3, 3, 0)),
+        };
+
+        var docA = CreateMockDocument("Architecture.rvt", [meshA]);
+        var docB = CreateMockDocument("Structure.rvt", [meshB]);
+
+        var assembly = NwcAssembly.Create("Coordination", docA, docB);
+
+        var clashes = assembly.FindClashes();
+
+        Assert.Single(clashes);
+        var clash = clashes[0];
+        Assert.Equal(10, clash.MeshA.Id);
+        Assert.Equal(20, clash.MeshB.Id);
+        // Overlap box should be [1, 2] in X and Y
+        Assert.Equal(1.0, clash.IntersectionBox.Min.X);
+        Assert.Equal(2.0, clash.IntersectionBox.Max.X);
+    }
+
+    private static NwcDocument CreateMockDocument(string sourceName, IReadOnlyList<NwcMesh> meshes)
+    {
+        // Synthetic minimal container with PartitionHeader
+        using var ms = new MemoryStream();
+        ms.Write("#LcUStream-V1.1 binary double release C lichunk-008\n"u8);
+
+        // Zlib stream containing PartitionHeader
+        using var zlibMs = new MemoryStream();
+        using (var deflater = new System.IO.Compression.ZLibStream(zlibMs, System.IO.Compression.CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            using var w = new BinaryWriter(deflater);
+            w.Write((long)7);
+            byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(sourceName);
+            w.Write(nameBytes.Length);
+            w.Write(nameBytes);
+            w.Write(-1);
+            w.Write((long)1692371995); // timestamp
+            w.Write((long)1024);       // length
+            byte[] pluginBytes = System.Text.Encoding.UTF8.GetBytes("LcNwcLoaderPlugin:mock");
+            w.Write(pluginBytes.Length);
+            w.Write(pluginBytes);
+        }
+
+        ms.Write(zlibMs.ToArray());
+        byte[] containerBytes = ms.ToArray();
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"mock_{Guid.NewGuid():N}.nwc");
+        try
+        {
+            File.WriteAllBytes(tempPath, containerBytes);
+            var doc = NwcDocument.Open(tempPath, new NwcReaderOptions { ReadMeshes = false });
+
+            // Assign the meshes to the mock document via reflection or custom assembly creation
+            var prop = typeof(NwcDocument).GetProperty(nameof(NwcDocument.Meshes));
+            var backingField = typeof(NwcDocument).GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .FirstOrDefault(f => f.Name.Contains("Meshes", StringComparison.OrdinalIgnoreCase));
+            if (backingField is not null)
+            {
+                backingField.SetValue(doc, meshes);
+            }
+
+            return doc;
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
+}

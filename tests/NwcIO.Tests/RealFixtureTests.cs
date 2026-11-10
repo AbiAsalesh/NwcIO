@@ -112,5 +112,63 @@ public class RealFixtureTests
         Assert.True(sceneTreeEl.TryGetProperty("children", out _));
         Assert.True(root.TryGetProperty("container", out var containerEl));
         Assert.True(containerEl.TryGetProperty("streams", out _));
+
+        // Milestone 5: Verify XRefTable and DbCache
+        Assert.NotNull(doc.XRefs);
+        Assert.Equal("XRefTable", doc.XRefs.Type);
+        Assert.Equal(1, doc.XRefs.Version);
+
+        Assert.NotNull(doc.DbCache);
+        Assert.Equal("LcOpDBCache", doc.DbCache.DatabaseName);
+        Assert.NotEmpty(doc.DbCache.Entries);
+        Assert.NotNull(doc.DbCache.Find("LcOpNwdGeometry"));
+
+        // Milestone 5: Verify Spatial Acceleration Index (BVH)
+        var spatial = doc.SpatialIndex;
+        Assert.NotNull(spatial);
+        Assert.Equal(doc.Meshes.Count, spatial.MeshCount);
+        Assert.True(spatial.NodeCount > 0);
+        Assert.True(spatial.LeafCount > 0);
+        Assert.True(spatial.MaxDepth > 0);
+        Assert.False(spatial.Bounds.IsEmpty);
+
+        // Query around the first mesh's world bounding box
+        var firstMeshBox = doc.Meshes[0].GetWorldBoundingBox();
+        var queryHits = spatial.QueryBox(firstMeshBox);
+        Assert.NotEmpty(queryHits);
+        Assert.Contains(queryHits, m => m.Id == doc.Meshes[0].Id);
+
+        // Raycast down towards the first mesh from 10 meters above its center
+        var targetPoint = firstMeshBox.Center;
+        var rayOrigin = new Model.Vector3d(targetPoint.X, targetPoint.Y, spatial.Bounds.Max.Z + 10.0);
+        var rayDir = new Model.Vector3d(0, 0, -1);
+        bool rayHit = spatial.Raycast(rayOrigin, rayDir, out var hit);
+        Assert.True(rayHit);
+        Assert.True(hit.Distance > 0);
+        Assert.NotNull(hit.Mesh);
+
+        // Milestone 5: Verify Multi-Model Assembly
+        var fixture2 = @"sample_mep.nwc";
+        if (File.Exists(fixture2))
+        {
+            var doc2 = NwcDocument.Open(fixture2);
+            var assembly = Model.NwcAssembly.Create("Campus_Coordination", doc, doc2);
+            Assert.Equal(2, assembly.Models.Count);
+            Assert.True(assembly.AllMeshes.Count > doc.Meshes.Count);
+            Assert.True(assembly.SpatialIndex.NodeCount > 0);
+
+            string tempGlb = Path.Combine(Path.GetTempPath(), $"assembly_{Guid.NewGuid():N}.glb");
+            try
+            {
+                assembly.SaveGlb(tempGlb);
+                Assert.True(File.Exists(tempGlb));
+                var info = new FileInfo(tempGlb);
+                Assert.True(info.Length > 200_000);
+            }
+            finally
+            {
+                if (File.Exists(tempGlb)) File.Delete(tempGlb);
+            }
+        }
     }
 }

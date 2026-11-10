@@ -173,6 +173,43 @@ public static class JsonExporter
             writer.WriteEndArray();
         }
 
+        if (document.XRefs is not null)
+        {
+            writer.WriteStartObject("xrefs");
+            writer.WriteString("type", document.XRefs.Type);
+            writer.WriteNumber("version", document.XRefs.Version);
+            writer.WriteString("savedFilename", document.XRefs.SavedFilename);
+            writer.WriteStartArray("references");
+            foreach (var xref in document.XRefs.References)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("originalPath", xref.OriginalPath);
+                writer.WriteString("remappedPath", xref.RemappedPath);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        if (document.DbCache is not null)
+        {
+            writer.WriteStartObject("dbCache");
+            writer.WriteString("databaseName", document.DbCache.DatabaseName);
+            writer.WriteNumber("entryCount", document.DbCache.Entries.Count);
+            writer.WriteStartArray("entries");
+            foreach (var entry in document.DbCache.Entries)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("name", entry.Name);
+                writer.WriteNumber("flags", entry.Flags);
+                writer.WriteNumber("offset", entry.Offset);
+                writer.WriteNumber("length", entry.Length);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
         if (options.IncludeStreamCatalog)
         {
             WriteStreamCatalog(writer, document);

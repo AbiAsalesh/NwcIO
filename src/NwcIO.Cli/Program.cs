@@ -4,22 +4,23 @@ using System.Reflection;
 using NwcIO;
 using NwcIO.Internal.Json;
 using NwcIO.Model;
+using NwcIO.Model.Spatial;
 
 namespace NwcIO.Cli;
 
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd> [output.json|output.obj|output.glb] [options]
+        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb] [options]
                nwcio --help | --version
 
-        Reads an Autodesk Navisworks (.nwc / .nwd) file and exports its scene tree,
-        properties, 3D transforms, metadata, materials, and 3D polygon meshes (GLB/OBJ/JSON)
-        without requiring Navisworks to be installed.
+        Reads Autodesk Navisworks files (.nwc, .nwd, .nwf) or assemblies of models
+        and exports scene trees, properties, 3D transforms, materials, and 3D polygon meshes
+        (GLB/OBJ/JSON) with BVH spatial acceleration, without requiring Navisworks.
 
         Arguments:
-          <input>            Path to the .nwc or .nwd file to read.
-          [output]           Destination path for the exported file (.json, .obj, or .glb).
+          <input>            Path to .nwc, .nwd, .nwf file or a folder of .nwc models.
+          [output]           Destination path for exported file (.json, .obj, or .glb).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
@@ -32,6 +33,9 @@ internal static class Program
           --no-transforms    Exclude 3D transform matrices from JSON export
           --no-tree          Exclude hierarchical scene graph tree from JSON export
           --no-indent        Write compact JSON instead of pretty-printed indented JSON
+          --bvh-stats        Include Bounding Volume Hierarchy (BVH) spatial index statistics
+          --raycast <coords> Perform 3D raycast test: "originX,originY,originZ,dirX,dirY,dirZ"
+          --clashes          Run cross-model clash detection for multi-model assemblies
           --report           Print summary report to standard error
           -h, --help         Show this help message and exit
           -v, --version      Show version information and exit
@@ -39,7 +43,7 @@ internal static class Program
         Exit codes:
           0  Success
           1  Usage error (missing or invalid arguments)
-          2  File not found
+          2  File or folder not found
           3  Data format error or parsing failure
         """;
 
@@ -65,6 +69,9 @@ internal static class Program
         string? outputPath = null;
         string? explicitObjPath = null;
         string? explicitGlbPath = null;
+        string? raycastArg = null;
+        bool checkClashes = false;
+        bool bvhStats = false;
         bool worldCoords = true;
         bool readMeshes = true;
         bool readMaterials = true;
@@ -97,13 +104,26 @@ internal static class Program
                 case "--local-coords":
                     worldCoords = false;
                     break;
+                case "--bvh-stats":
+                    bvhStats = true;
+                    break;
+                case "--clashes":
+                    checkClashes = true;
+                    break;
+                case "--raycast":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --raycast.");
+                        return 1;
+                    }
+                    raycastArg = args[++i];
+                    break;
                 case "--obj":
                     if (i + 1 >= args.Length)
                     {
                         Console.Error.WriteLine("Error: Missing argument for --obj.");
                         return 1;
                     }
-
                     explicitObjPath = args[++i];
                     break;
                 case "--glb":
@@ -112,7 +132,6 @@ internal static class Program
                         Console.Error.WriteLine("Error: Missing argument for --glb.");
                         return 1;
                     }
-
                     explicitGlbPath = args[++i];
                     break;
                 case "--no-indent":
@@ -154,15 +173,36 @@ internal static class Program
             return 1;
         }
 
-        if (!File.Exists(inputPath))
+        bool isDirectory = Directory.Exists(inputPath);
+        bool isFile = File.Exists(inputPath);
+
+        if (!isDirectory && !isFile)
         {
-            Console.Error.WriteLine($"Error: Input file '{inputPath}' does not exist.");
+            Console.Error.WriteLine($"Error: Input '{inputPath}' does not exist as file or directory.");
             return 2;
         }
 
+        var sw = Stopwatch.StartNew();
+
+        // Handle multi-model directory assembly
+        if (isDirectory)
+        {
+            return ProcessAssemblyDirectory(
+                inputPath, outputPath, explicitGlbPath, explicitObjPath,
+                worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
+        }
+
+        // Handle NWF assembly file
+        if (inputPath.EndsWith(".nwf", StringComparison.OrdinalIgnoreCase))
+        {
+            return ProcessNwfAssembly(
+                inputPath, outputPath, explicitGlbPath, explicitObjPath,
+                worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
+        }
+
+        // Single NWC/NWD document
         outputPath ??= Path.ChangeExtension(inputPath, ".json");
 
-        var sw = Stopwatch.StartNew();
         NwcDocument doc;
         try
         {
@@ -188,7 +228,6 @@ internal static class Program
             return 3;
         }
 
-        // Check if output is directly an OBJ or GLB file
         bool outputIsObj = outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase);
         bool outputIsGlb = outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
 
@@ -228,7 +267,6 @@ internal static class Program
                 }
             }
 
-            // Additional explicit exports
             if (!string.IsNullOrEmpty(explicitGlbPath))
             {
                 EnsureParentDirectory(explicitGlbPath);
@@ -245,6 +283,12 @@ internal static class Program
         {
             Console.Error.WriteLine($"Error exporting to '{outputPath}': {ex.Message}");
             return 3;
+        }
+
+        // Raycast test if requested
+        if (!string.IsNullOrEmpty(raycastArg))
+        {
+            ExecuteRaycastTest(doc.SpatialIndex, raycastArg);
         }
 
         sw.Stop();
@@ -268,17 +312,22 @@ internal static class Program
             Console.Error.WriteLine($"Vertices:         {totalVertices:N0}");
             Console.Error.WriteLine($"Triangles:        {totalTriangles:N0}");
             Console.Error.WriteLine($"Materials:        {doc.Materials.Count}");
+            if (doc.XRefs is not null)
+            {
+                Console.Error.WriteLine($"XRefs:            {doc.XRefs.References.Count}");
+            }
+            if (doc.DbCache is not null)
+            {
+                Console.Error.WriteLine($"DbCache Entries:  {doc.DbCache.Entries.Count}");
+            }
+            if (bvhStats && doc.Meshes.Count > 0)
+            {
+                var idx = doc.SpatialIndex;
+                Console.Error.WriteLine($"BVH Nodes:        {idx.NodeCount} ({idx.LeafCount} leaves, max depth {idx.MaxDepth})");
+                Console.Error.WriteLine($"Bounding box:     {idx.Bounds}");
+            }
             Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
             Console.Error.WriteLine($"Output:           {outputPath}");
-            if (!string.IsNullOrEmpty(explicitGlbPath))
-            {
-                Console.Error.WriteLine($"GLB Output:       {explicitGlbPath}");
-            }
-
-            if (!string.IsNullOrEmpty(explicitObjPath))
-            {
-                Console.Error.WriteLine($"OBJ Output:       {explicitObjPath}");
-            }
         }
         else
         {
@@ -287,6 +336,178 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static int ProcessAssemblyDirectory(
+        string dirPath,
+        string? outputPath,
+        string? explicitGlbPath,
+        string? explicitObjPath,
+        bool worldCoords,
+        bool checkClashes,
+        bool bvhStats,
+        string? raycastArg,
+        bool printReport,
+        bool indent,
+        Stopwatch sw)
+    {
+        outputPath ??= Path.Combine(dirPath, Path.GetFileName(dirPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + "_assembly.glb");
+
+        var assembly = NwcAssembly.LoadFromDirectory(dirPath);
+
+        if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveGlb(outputPath, worldCoords);
+        }
+        else if (outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveObj(outputPath, worldCoords);
+        }
+        else
+        {
+            assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
+        }
+
+        if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
+        if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
+
+        if (!string.IsNullOrEmpty(raycastArg))
+        {
+            ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
+        }
+
+        IReadOnlyList<NwcClash>? clashes = null;
+        if (checkClashes)
+        {
+            clashes = assembly.FindClashes();
+        }
+
+        sw.Stop();
+
+        if (printReport)
+        {
+            Console.Error.WriteLine("=== NwcIO Assembly Report ===");
+            Console.Error.WriteLine($"Assembly:         {assembly.Name}");
+            Console.Error.WriteLine($"Models:           {assembly.Models.Count}");
+            Console.Error.WriteLine($"Total Meshes:     {assembly.AllMeshes.Count}");
+            Console.Error.WriteLine($"Total Materials:  {assembly.AllMaterials.Count}");
+            Console.Error.WriteLine($"Bounding Box:     {assembly.BoundingBox}");
+            if (bvhStats)
+            {
+                var idx = assembly.SpatialIndex;
+                Console.Error.WriteLine($"BVH Nodes:        {idx.NodeCount} ({idx.LeafCount} leaves, max depth {idx.MaxDepth})");
+            }
+            if (clashes is not null)
+            {
+                Console.Error.WriteLine($"Clashes Detected: {clashes.Count}");
+            }
+            Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
+            Console.Error.WriteLine($"Output:           {outputPath}");
+        }
+        else
+        {
+            Console.WriteLine(FormattableString.Invariant(
+                $"Assembly '{assembly.Name}': {assembly.Models.Count} models, {assembly.AllMeshes.Count} meshes, {assembly.AllMaterials.Count} materials exported to '{outputPath}' in {sw.ElapsedMilliseconds} ms."));
+        }
+
+        return 0;
+    }
+
+    private static int ProcessNwfAssembly(
+        string nwfPath,
+        string? outputPath,
+        string? explicitGlbPath,
+        string? explicitObjPath,
+        bool worldCoords,
+        bool checkClashes,
+        bool bvhStats,
+        string? raycastArg,
+        bool printReport,
+        bool indent,
+        Stopwatch sw)
+    {
+        outputPath ??= Path.ChangeExtension(nwfPath, ".glb");
+        var assembly = NwcAssembly.OpenNwf(nwfPath);
+
+        if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveGlb(outputPath, worldCoords);
+        }
+        else if (outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase))
+        {
+            assembly.SaveObj(outputPath, worldCoords);
+        }
+        else
+        {
+            assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
+        }
+
+        if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
+        if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
+
+        if (!string.IsNullOrEmpty(raycastArg))
+        {
+            ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
+        }
+
+        IReadOnlyList<NwcClash>? clashes = null;
+        if (checkClashes)
+        {
+            clashes = assembly.FindClashes();
+        }
+
+        sw.Stop();
+
+        if (printReport)
+        {
+            Console.Error.WriteLine("=== NwcIO NWF Assembly Report ===");
+            Console.Error.WriteLine($"NWF File:         {nwfPath}");
+            Console.Error.WriteLine($"Loaded Models:    {assembly.Models.Count}");
+            Console.Error.WriteLine($"Total Meshes:     {assembly.AllMeshes.Count}");
+            Console.Error.WriteLine($"Bounding Box:     {assembly.BoundingBox}");
+            if (clashes is not null)
+            {
+                Console.Error.WriteLine($"Clashes Detected: {clashes.Count}");
+            }
+            Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
+            Console.Error.WriteLine($"Output:           {outputPath}");
+        }
+        else
+        {
+            Console.WriteLine(FormattableString.Invariant(
+                $"NWF Assembly '{assembly.Name}': {assembly.Models.Count} models, {assembly.AllMeshes.Count} meshes exported to '{outputPath}' in {sw.ElapsedMilliseconds} ms."));
+        }
+
+        return 0;
+    }
+
+    private static void ExecuteRaycastTest(NwcSpatialIndex index, string coords)
+    {
+        var parts = coords.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 6 ||
+            !double.TryParse(parts[0], CultureInfo.InvariantCulture, out double ox) ||
+            !double.TryParse(parts[1], CultureInfo.InvariantCulture, out double oy) ||
+            !double.TryParse(parts[2], CultureInfo.InvariantCulture, out double oz) ||
+            !double.TryParse(parts[3], CultureInfo.InvariantCulture, out double dx) ||
+            !double.TryParse(parts[4], CultureInfo.InvariantCulture, out double dy) ||
+            !double.TryParse(parts[5], CultureInfo.InvariantCulture, out double dz))
+        {
+            Console.Error.WriteLine($"Warning: Invalid raycast format '{coords}'. Expected: ox,oy,oz,dx,dy,dz");
+            return;
+        }
+
+        var origin = new Vector3d(ox, oy, oz);
+        var dir = new Vector3d(dx, dy, dz);
+
+        if (index.Raycast(origin, dir, out var hit))
+        {
+            Console.WriteLine(FormattableString.Invariant(
+                $"Raycast HIT at distance {hit.Distance:F3}: Point={hit.Point}, Normal={hit.Normal}, MeshId={hit.Mesh.Id}, Triangle={hit.TriangleIndex}"));
+        }
+        else
+        {
+            Console.WriteLine("Raycast MISS: no intersecting surface found along the ray.");
+        }
     }
 
     private static void EnsureParentDirectory(string path)

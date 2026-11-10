@@ -31,6 +31,53 @@ public sealed class NwcMesh
     /// <summary>Number of triangle faces in this mesh.</summary>
     public int TriangleCount => Indices.Count / 3;
 
+    private BoundingBox3d? _cachedWorldBounds;
+
+    /// <summary>
+    /// Gets the axis-aligned bounding box of the mesh in world space coordinates.
+    /// </summary>
+    public BoundingBox3d GetWorldBoundingBox()
+    {
+        if (_cachedWorldBounds.HasValue)
+        {
+            return _cachedWorldBounds.Value;
+        }
+
+        if (Transform is null)
+        {
+            if (BoundingBox.HasValue && !BoundingBox.Value.IsEmpty)
+            {
+                _cachedWorldBounds = BoundingBox.Value;
+                return BoundingBox.Value;
+            }
+        }
+
+        var worldVerts = GetWorldVertices();
+        if (worldVerts.Count == 0)
+        {
+            _cachedWorldBounds = BoundingBox3d.Empty;
+            return BoundingBox3d.Empty;
+        }
+
+        double minX = double.PositiveInfinity, minY = double.PositiveInfinity, minZ = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity, maxZ = double.NegativeInfinity;
+
+        for (int i = 0; i < worldVerts.Count; i++)
+        {
+            var v = worldVerts[i];
+            if (v.X < minX) minX = v.X;
+            if (v.Y < minY) minY = v.Y;
+            if (v.Z < minZ) minZ = v.Z;
+            if (v.X > maxX) maxX = v.X;
+            if (v.Y > maxY) maxY = v.Y;
+            if (v.Z > maxZ) maxZ = v.Z;
+        }
+
+        var bounds = new BoundingBox3d(new(minX, minY, minZ), new(maxX, maxY, maxZ));
+        _cachedWorldBounds = bounds;
+        return bounds;
+    }
+
     /// <summary>
     /// Returns vertices transformed into world space coordinates by <see cref="Transform"/>.
     /// If no transform is assigned, returns <see cref="Vertices"/>.

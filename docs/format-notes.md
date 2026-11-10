@@ -108,11 +108,43 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Triangles are arranged in `TRIANGLE_STRIP` order: $(i, i+1, i+2)$ for even $i$, $(i+1, i, i+2)$ for odd $i$ to maintain outward normals.
   - Linear wire elements (e.g. rebar centerlines, grid axes) are indicated when `vCount = 2`.
 
-### 2.7 DB Cache (`DbCache`) & XRef JSON (`XRefJson`)
-- **DbCache**: Header `LcOpDBCache`, contains embedded product registry and subsystem metadata (`LcOpNwdGeometry`, `LcOpNwdLogicalHierarchy`, `LcOpGuidStore`, etc.).
-- **XRef JSON**: UTF-8 JSON snippet starting with `{"Type":"XRefTable", ...}` storing external cross-references.
+### 2.7 DB Cache Directory (`DbCache` / `LcOpDBCache`)
+- **Container Structure**:
+  - `int32 magic = -1` (`0xFFFFFFFF`): stream indicator.
+  - `int32 entryCount`: number of recorded table segments (e.g., 9, 19).
+  - `int32 nameLen` + ASCII name (`LcOpDBCache`) + padding to 4 bytes.
+  - `int64 v1`, `int64 v2`, `int64 v3`, `int64 v4`: 32 bytes of database partition metadata.
+- **Segment Record Layout**:
+  - `int32 segmentNameLen` + ASCII name (e.g. `cache\LcOpNwdGeometry`, `cache\LcOpGuidStore`, `LcOpXRefTable`) + padding to 4 bytes.
+  - `int32 flags`: version / compression flags (e.g. 1, 3).
+  - `int64 offset`: byte offset of segment payload.
+  - `int64 length`: byte size of segment data.
+  - `int64 extra`: segment alignment / format flags.
+- **Role**: Functions as a virtual filesystem directory for embedded partition stores in Section 1/2.
 
-### 2.8 Materials, RGBA Colors & glTF 2.0 (GLB)
+### 2.8 External Reference Table (`XRefJson` / `XRefTable`)
+- **Signature**: Stream beginning with or containing `{"Type":"XRefTable", ...}`.
+- **JSON Structure**:
+  ```json
+  {
+    "Type": "XRefTable",
+    "Version": 1,
+    "SavedFilename": "C:\\Projects\\Building_Structural.nwc",
+    "Table": [
+      {
+        "OriginalPath": "C:/Program Files/Autodesk/Materials/Textures/1/Mats/124.png",
+        "RemappedPath": "C:/Program Files/Autodesk/Materials/Textures/1/Mats/124.png"
+      }
+    ]
+  }
+  ```
+- **Fields**:
+  - `Type`: `"XRefTable"`
+  - `Version`: schema version (integer 1)
+  - `SavedFilename`: canonical original document path
+  - `Table`: array of external file references (textures, linked `.nwc`/`.nwd` files) with `OriginalPath` and `RemappedPath`.
+
+### 2.9 Materials, RGBA Colors & glTF 2.0 (GLB)
 - **Material Records**:
   - `LcRevitElement` with prefix `Material "Name", #ElementId`: defines material instances.
   - `revit_Color` with property `Color`: stores comma-separated `"R, G, B"` integer triples in $0..255$ range (e.g. `"255, 128, 0"`, `"0, 255, 255"`).
@@ -122,3 +154,14 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Chunk 0: JSON metadata padded with `0x20` space bytes to 4-byte alignment.
   - Chunk 1: Binary buffer (`BIN\0`, `0x004E4942`) padded with `0x00` bytes to 4-byte alignment.
   - Packed buffers include `POSITION` (VEC3 float), `NORMAL` (VEC3 computed smooth/flat normals), `indices` (SCALAR uint16/uint32), and PBR materials with `baseColorFactor`, `metallicFactor`, `roughnessFactor`.
+
+### 2.10 Federated Multi-Model Assemblies (.nwf) & 3D Spatial Indexing (BVH)
+- **NWF Assemblies**:
+  - Navisworks files (`.nwf`) reference component models (`.nwc`, `.nwd`) without duplicating geometry.
+  - `NwcAssembly` composites multiple documents into a unified coordinate system with hierarchical scene aggregation (`RootNode` -> contributing models -> categories -> families -> elements).
+  - Merges meshes, materials, properties, and bounding boxes into a federated model with unified export to GLB, OBJ, and JSON.
+- **Bounding Volume Hierarchy (BVH)**:
+  - Balanced binary AABB tree constructed using centroid median splits along maximal extent axes ($X, Y, Z$).
+  - Sub-millisecond spatial range queries (`QueryBox`) and frustum testing.
+  - High-performance raycasting using branch-and-bound AABB traversal followed by double-precision Möller–Trumbore ray-triangle intersection tests with surface normal determination.
+  - Multi-model clash detection (`FindClashes`) detecting spatial bounding box collisions across models.
