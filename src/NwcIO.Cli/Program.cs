@@ -10,18 +10,22 @@ namespace NwcIO.Cli;
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd> [output.json] [options]
+        Usage: nwcio <input.nwc|input.nwd> [output.json|output.obj] [options]
                nwcio --help | --version
 
         Reads an Autodesk Navisworks (.nwc / .nwd) file and exports its scene tree,
-        properties, 3D transforms, and metadata to JSON without requiring Navisworks to be installed.
+        properties, 3D transforms, metadata, and 3D polygon meshes (OBJ/JSON)
+        without requiring Navisworks to be installed.
 
         Arguments:
           <input>            Path to the .nwc or .nwd file to read.
-          [output]           Destination path for the exported JSON file.
+          [output]           Destination path for the exported file (.json or .obj).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
+          --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
+          --local-coords     Export OBJ in local coordinate space (default: world coordinates)
+          --no-meshes        Disable 3D mesh geometry extraction
           --catalog          Include raw container stream catalog (offsets, sizes, kinds)
           --no-transforms    Exclude 3D transform matrices from JSON export
           --no-tree          Exclude hierarchical scene graph tree from JSON export
@@ -57,6 +61,9 @@ internal static class Program
 
         string? inputPath = null;
         string? outputPath = null;
+        string? explicitObjPath = null;
+        bool worldCoords = true;
+        bool readMeshes = true;
         bool includeCatalog = false;
         bool includeTransforms = true;
         bool includeTree = true;
@@ -76,6 +83,21 @@ internal static class Program
                     break;
                 case "--no-tree":
                     includeTree = false;
+                    break;
+                case "--no-meshes":
+                    readMeshes = false;
+                    break;
+                case "--local-coords":
+                    worldCoords = false;
+                    break;
+                case "--obj":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --obj.");
+                        return 1;
+                    }
+
+                    explicitObjPath = args[++i];
                     break;
                 case "--no-indent":
                     indent = false;
@@ -128,7 +150,15 @@ internal static class Program
         NwcDocument doc;
         try
         {
-            doc = NwcDocument.Open(inputPath);
+            doc = NwcDocument.Open(inputPath, new NwcReaderOptions
+            {
+                ReadMeshes = readMeshes,
+                ReadPropertyRecords = true,
+                ReadGuids = true,
+                ReadTransforms = includeTransforms,
+                BuildSceneTree = includeTree,
+                KeepStreamCatalog = includeCatalog,
+            });
         }
         catch (InvalidDataException ex)
         {
@@ -141,35 +171,49 @@ internal static class Program
             return 3;
         }
 
-        var exportOptions = new NwcJsonExportOptions
-        {
-            Indented = indent,
-            IncludeTransforms = includeTransforms,
-            IncludeSceneTree = includeTree,
-            IncludeStreamCatalog = includeCatalog,
-        };
+        // Check if output is directly an OBJ file
+        bool outputIsObj = outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase);
 
         try
         {
-            if (outputPath == "-")
+            if (outputIsObj)
             {
-                using var stdout = Console.OpenStandardOutput();
-                JsonExporter.Write(doc, stdout, exportOptions);
+                EnsureParentDirectory(outputPath);
+                doc.SaveObj(outputPath, worldCoords);
             }
             else
             {
-                var dir = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrEmpty(dir))
+                var exportOptions = new NwcJsonExportOptions
                 {
-                    Directory.CreateDirectory(dir);
-                }
+                    Indented = indent,
+                    IncludeTransforms = includeTransforms,
+                    IncludeSceneTree = includeTree,
+                    IncludeMeshes = readMeshes,
+                    IncludeStreamCatalog = includeCatalog,
+                };
 
-                JsonExporter.WriteFile(doc, outputPath, exportOptions);
+                if (outputPath == "-")
+                {
+                    using var stdout = Console.OpenStandardOutput();
+                    JsonExporter.Write(doc, stdout, exportOptions);
+                }
+                else
+                {
+                    EnsureParentDirectory(outputPath);
+                    JsonExporter.WriteFile(doc, outputPath, exportOptions);
+                }
+            }
+
+            // If an additional explicit --obj export was requested alongside JSON
+            if (!string.IsNullOrEmpty(explicitObjPath))
+            {
+                EnsureParentDirectory(explicitObjPath);
+                doc.SaveObj(explicitObjPath, worldCoords);
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error exporting JSON to '{outputPath}': {ex.Message}");
+            Console.Error.WriteLine($"Error exporting to '{outputPath}': {ex.Message}");
             return 3;
         }
 
@@ -178,6 +222,9 @@ internal static class Program
         if (printReport)
         {
             int treeNodeCount = CountNodes(doc.RootNode);
+            int totalVertices = doc.Meshes.Sum(m => m.Vertices.Count);
+            int totalTriangles = doc.Meshes.Sum(m => m.TriangleCount);
+
             Console.Error.WriteLine("=== NwcIO Execution Report ===");
             Console.Error.WriteLine($"Input:            {inputPath}");
             Console.Error.WriteLine($"Source document:  {doc.FileInfo.SourcePath ?? "<unknown>"}");
@@ -187,15 +234,32 @@ internal static class Program
             Console.Error.WriteLine($"Property records: {doc.PropertyRecords.Count}");
             Console.Error.WriteLine($"GUIDs:            {doc.Guids.Count}");
             Console.Error.WriteLine($"3D Transforms:    {doc.Transforms.Count}");
+            Console.Error.WriteLine($"3D Meshes:        {doc.Meshes.Count}");
+            Console.Error.WriteLine($"Vertices:         {totalVertices:N0}");
+            Console.Error.WriteLine($"Triangles:        {totalTriangles:N0}");
             Console.Error.WriteLine($"Elapsed:          {sw.ElapsedMilliseconds} ms");
             Console.Error.WriteLine($"Output:           {outputPath}");
+            if (!string.IsNullOrEmpty(explicitObjPath))
+            {
+                Console.Error.WriteLine($"OBJ Output:       {explicitObjPath}");
+            }
         }
         else
         {
-            Console.WriteLine($"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs, {doc.Transforms.Count} transforms to '{outputPath}' in {sw.ElapsedMilliseconds} ms.");
+            Console.WriteLine(FormattableString.Invariant(
+                $"Exported {doc.PropertyRecords.Count} records, {doc.Guids.Count} GUIDs, {doc.Transforms.Count} transforms, {doc.Meshes.Count} meshes to '{outputPath}' in {sw.ElapsedMilliseconds} ms."));
         }
 
         return 0;
+    }
+
+    private static void EnsureParentDirectory(string path)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
     }
 
     private static int CountNodes(NwcNode? node)

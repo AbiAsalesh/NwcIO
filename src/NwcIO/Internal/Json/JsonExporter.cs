@@ -117,6 +117,39 @@ public static class JsonExporter
             writer.WriteEndObject();
         }
 
+        writer.WriteNumber("meshCount", document.Meshes.Count);
+        if (options.IncludeMeshes && document.Meshes.Count > 0)
+        {
+            writer.WriteStartArray("meshes");
+            foreach (var mesh in document.Meshes)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("id", mesh.Id);
+                writer.WriteString("name", mesh.Name);
+                writer.WriteNumber("vertexCount", mesh.Vertices.Count);
+                writer.WriteNumber("triangleCount", mesh.TriangleCount);
+                if (mesh.BoundingBox is { } bbox)
+                {
+                    writer.WriteStartObject("boundingBox");
+                    writer.WriteStartArray("min");
+                    WriteSafeNumberValue(writer, bbox.Min.X);
+                    WriteSafeNumberValue(writer, bbox.Min.Y);
+                    WriteSafeNumberValue(writer, bbox.Min.Z);
+                    writer.WriteEndArray();
+                    writer.WriteStartArray("max");
+                    WriteSafeNumberValue(writer, bbox.Max.X);
+                    WriteSafeNumberValue(writer, bbox.Max.Y);
+                    WriteSafeNumberValue(writer, bbox.Max.Z);
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
         if (options.IncludeStreamCatalog)
         {
             WriteStreamCatalog(writer, document);

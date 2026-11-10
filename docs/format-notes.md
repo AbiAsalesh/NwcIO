@@ -86,9 +86,28 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
 - **Affine Matrix Conversion**: A 4x4 row-major matrix is computed directly from the quaternion rotation $R$ and translation vector $T$.
 
 ### 2.5 Table of Contents (`Toc`)
-- **Signature**: `[int32 x][int32 count][count * int32 compressedLengths]`
-- Catalogs chunk sizes and offsets within the file.
+- **Signature & Layout**:
+  - `[int32 recordCount]`: total number of indexed geometry records (e.g., 582, 2778, 4202).
+  - `[int32 chunkCount]`: number of contiguous 64 KB uncompressed zlib chunks in Section 0 (e.g., 5, 25, 31).
+  - `chunkCount x int32`: compressed byte size of each preceding chunk in the container.
+  - `recordCount x int32`: byte length of each individual geometry record in the concatenated geometry buffer.
+  - Stream byte length equals `8 + 4 * chunkCount + 4 * recordCount` (plus optional 4-byte padding).
+- **Function**: Acts as the master index for the entire geometry stream, allowing random access and contiguous stream reassembly.
 
-### 2.6 DB Cache (`DbCache`) & XRef JSON (`XRefJson`)
+### 2.6 Geometry & 3D Mesh Records (`Geometry`)
+- **Contiguous Block**: The `chunkCount` streams immediately preceding the TOC form a continuous binary data block containing 3D meshes and lines.
+- **Record Headers**:
+  - `Tag 94 (0x5E)` / `Tag 95 (0x5F)`: Mesh record container `[int32 recId][int32 94|95]`.
+  - Nested `Tag 60 (0x3C)`: Vertex buffer descriptor `[int32 subId][int32 60][int32 p1][int32 p2]`.
+- **Vertex Buffer Layout**:
+  - If `p2 > 0 && p2 % 3 == 0`, `vertexCount = p2 / 3` (float count divided by 3).
+  - Else if `p1 > 0`, `vertexCount = p1`.
+  - Followed by `vertexCount` float triples `(X, Y, Z)` in IEEE 754 single-precision (12 bytes per vertex).
+  - Terminated by `[int32 102][int32 100|58][int32 -indexCount]` and optional `0xD4` alignment padding.
+- **Topology**:
+  - Triangles are arranged in `TRIANGLE_STRIP` order: $(i, i+1, i+2)$ for even $i$, $(i+1, i, i+2)$ for odd $i$ to maintain outward normals.
+  - Linear wire elements (e.g. rebar centerlines, grid axes) are indicated when `vCount = 2`.
+
+### 2.7 DB Cache (`DbCache`) & XRef JSON (`XRefJson`)
 - **DbCache**: Header `LcOpDBCache`, contains embedded metadata and product cache.
 - **XRef JSON**: UTF-8 JSON snippet starting with `{"Type":"XRefTable", ...}` storing external cross-references.

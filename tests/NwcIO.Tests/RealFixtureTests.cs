@@ -51,12 +51,29 @@ public class RealFixtureTests
         Assert.NotNull(doc.RootNode);
         Assert.NotEmpty(doc.RootNode.Children);
 
+        Assert.NotEmpty(doc.Meshes);
+        Assert.True(doc.Meshes.Count > 500);
+        var firstMesh = doc.Meshes[0];
+        Assert.True(firstMesh.Vertices.Count >= 3);
+        Assert.True(firstMesh.TriangleCount >= 1);
+        Assert.NotNull(firstMesh.BoundingBox);
+
+        // Verify OBJ export
+        using var sw = new StringWriter();
+        doc.SaveObj(sw, worldCoordinates: true);
+        string obj = sw.ToString();
+        Assert.NotEmpty(obj);
+        Assert.Contains("o Mesh_0", obj);
+        Assert.Contains("v ", obj);
+        Assert.Contains("f ", obj);
+
         // Verify JSON export
         string json = doc.ToJson(new NwcJsonExportOptions
         {
             Indented = false,
             IncludeTransforms = true,
             IncludeSceneTree = true,
+            IncludeMeshes = true,
             IncludeStreamCatalog = true,
         });
         Assert.NotEmpty(json);
@@ -71,6 +88,10 @@ public class RealFixtureTests
         Assert.Equal(doc.Guids.Count, guidsEl.GetArrayLength());
         Assert.True(root.TryGetProperty("transforms", out var transformsEl));
         Assert.Equal(doc.Transforms.Count, transformsEl.GetArrayLength());
+        Assert.True(root.TryGetProperty("meshCount", out var meshCountEl));
+        Assert.Equal(doc.Meshes.Count, meshCountEl.GetInt32());
+        Assert.True(root.TryGetProperty("meshes", out var meshesEl));
+        Assert.Equal(doc.Meshes.Count, meshesEl.GetArrayLength());
         Assert.True(root.TryGetProperty("sceneTree", out var sceneTreeEl));
         Assert.True(sceneTreeEl.TryGetProperty("children", out _));
         Assert.True(root.TryGetProperty("container", out var containerEl));

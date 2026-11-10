@@ -14,6 +14,8 @@ public enum NwcStreamKind
     Guids,
     /// <summary>Transform records (4x4 matrices).</summary>
     Transforms,
+    /// <summary>3D mesh geometry and vertex buffers (tags 94, 60).</summary>
+    Geometry,
     /// <summary>XRefTable JSON fragment.</summary>
     XRefJson,
     /// <summary>LcOpDBCache products footer.</summary>

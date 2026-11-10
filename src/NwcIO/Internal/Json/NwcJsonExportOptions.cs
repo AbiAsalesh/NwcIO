@@ -14,6 +14,9 @@ public sealed class NwcJsonExportOptions
     /// <summary>Include hierarchical scene graph tree in the JSON export (default: true).</summary>
     public bool IncludeSceneTree { get; set; } = true;
 
+    /// <summary>Include 3D mesh geometry summaries in the JSON export (default: false).</summary>
+    public bool IncludeMeshes { get; set; }
+
     /// <summary>Include the per-stream container catalog in the output (default: false).</summary>
     public bool IncludeStreamCatalog { get; set; }
 }

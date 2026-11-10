@@ -14,6 +14,7 @@ public sealed class NwcDocument
         IReadOnlyList<NwcPropertyRecord> records,
         IReadOnlyList<Guid> guids,
         IReadOnlyList<NwcTransform> transforms,
+        IReadOnlyList<NwcMesh> meshes,
         NwcNode? rootNode,
         NwcContainer container)
     {
@@ -21,6 +22,7 @@ public sealed class NwcDocument
         PropertyRecords = records;
         Guids = guids;
         Transforms = transforms;
+        Meshes = meshes;
         RootNode = rootNode;
         Container = container;
     }
@@ -35,6 +37,9 @@ public sealed class NwcDocument
 
     /// <summary>3D spatial transformations and bounding boxes parsed from transform streams.</summary>
     public IReadOnlyList<NwcTransform> Transforms { get; }
+
+    /// <summary>3D polygon meshes extracted from geometry streams and TOC tables.</summary>
+    public IReadOnlyList<NwcMesh> Meshes { get; }
 
     /// <summary>Root of the hierarchical scene graph tree (matching Navisworks selection tree).</summary>
     public NwcNode? RootNode { get; }
@@ -94,6 +99,12 @@ public sealed class NwcDocument
             }
         }
 
+        var meshes = new List<NwcMesh>();
+        if (options.ReadMeshes)
+        {
+            meshes.AddRange(MeshParser.Parse(container, transforms));
+        }
+
         NwcNode? rootNode = null;
         if (options.BuildSceneTree)
         {
@@ -106,7 +117,19 @@ public sealed class NwcDocument
             container = container with { Streams = [] };
         }
 
-        return new NwcDocument(fileInfo, records, guids, transforms, rootNode, container);
+        return new NwcDocument(fileInfo, records, guids, transforms, meshes, rootNode, container);
+    }
+
+    /// <summary>Exports 3D mesh geometry to a Wavefront OBJ file.</summary>
+    public void SaveObj(string path, bool worldCoordinates = true)
+    {
+        Internal.Export.ObjExporter.WriteFile(Meshes, path, worldCoordinates, FileInfo.SourcePath);
+    }
+
+    /// <summary>Exports 3D mesh geometry to a <see cref="TextWriter"/> in Wavefront OBJ format.</summary>
+    public void SaveObj(TextWriter writer, bool worldCoordinates = true)
+    {
+        Internal.Export.ObjExporter.Write(Meshes, writer, worldCoordinates, FileInfo.SourcePath);
     }
 
     /// <summary>Exports the document to a JSON file.</summary>

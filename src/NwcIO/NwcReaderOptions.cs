@@ -17,6 +17,9 @@ public sealed class NwcReaderOptions
     /// <summary>Build the hierarchical scene graph tree (default: true).</summary>
     public bool BuildSceneTree { get; set; } = true;
 
+    /// <summary>Parse 3D meshes from geometry streams (default: true).</summary>
+    public bool ReadMeshes { get; set; } = true;
+
     /// <summary>Keep the stream catalog (offsets, sizes, kinds) in the document (default: true).</summary>
     public bool KeepStreamCatalog { get; set; } = true;
 }

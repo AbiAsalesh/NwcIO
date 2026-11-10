@@ -12,9 +12,24 @@ public static class StreamClassifier
 {
     public static void ClassifyAll(IReadOnlyList<LcRawStream> streams)
     {
-        foreach (var stream in streams)
+        for (int i = 0; i < streams.Count; i++)
         {
-            stream.Kind = Classify(stream);
+            streams[i].Kind = Classify(streams[i]);
+        }
+
+        // Post-pass: TOC catalogs preceding geometry chunks in Section 0
+        var toc = streams.FirstOrDefault(s => s.Kind == NwcStreamKind.Toc);
+        if (toc is not null && toc.Data.Length >= 8)
+        {
+            int chunkCount = ReadInt32(toc.Data, 4);
+            int start = Math.Max(0, toc.Index - chunkCount);
+            for (int i = start; i < toc.Index; i++)
+            {
+                if (streams[i].SectionIndex == toc.SectionIndex && streams[i].Kind == NwcStreamKind.Unknown)
+                {
+                    streams[i].Kind = NwcStreamKind.Geometry;
+                }
+            }
         }
     }
 
@@ -66,24 +81,21 @@ public static class StreamClassifier
             return NwcStreamKind.DbCache;
         }
 
-        // TOC: [int32 x][int32 count][count x int32 compressed sizes...].
+        // Geometry mesh records starting with [100][94] or [100][95]
+        if (data.Length >= 8 && ReadInt32(data, 0) == 100 && (ReadInt32(data, 4) is 94 or 95))
+        {
+            return NwcStreamKind.Geometry;
+        }
+
+        // TOC: [int32 recCount][int32 chunkCount][chunkCount x int32 sizes][recCount x int32 lengths]
         if (data.Length >= 16)
         {
-            int count = ReadInt32(data, 4);
-            if (count is > 0 and <= 1_000_000 && data.Length >= 8 + 4L * count && data.Length < 8 + 4L * count * 8)
+            int recCount = ReadInt32(data, 0);
+            int chunkCount = ReadInt32(data, 4);
+            if (recCount > 0 && recCount < 1_000_000 && chunkCount > 0 && chunkCount < 5000)
             {
-                bool plausible = true;
-                for (int i = 0; i < count; i++)
-                {
-                    int size = ReadInt32(data, 8 + 4 * i);
-                    if (size is <= 0 or > 512 * 1024 * 1024)
-                    {
-                        plausible = false;
-                        break;
-                    }
-                }
-
-                if (plausible)
+                int expected = 8 + 4 * chunkCount + 4 * recCount;
+                if (data.Length == expected || data.Length == expected + 4)
                 {
                     return NwcStreamKind.Toc;
                 }
