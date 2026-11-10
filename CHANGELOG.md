@@ -2,6 +2,14 @@
 
 All notable changes to the `NwcIO` library and CLI are documented in this file.
 
+## [0.1.1] - 2026-11-10
+
+### Security & Clean-Room Governance
+- **Strict Clean-Room Policy**: Full abstraction of external test fixtures via `NWCIO_TEST_FILES` environment variable and optional uncommitted `test_files/` directory, mirroring the RvtIO standard.
+- **Fixture Resolution Helper**: Introduced `TestFiles` helper class in `NwcIO.Tests` with zero hardcoded filesystem paths or machine-specific fallback directories.
+- **Documentation**: Added `docs/test-fixtures.md` documenting clean-room testing principles, test skipping rules, and fixture expectations.
+- **Anonymized Benchmarks**: Scrubbed all specific project references, real industrial facility names, and local test model filenames from README, format notes, and tests.
+
 ## [0.1.0] - 2026-11-10
 
 ### Initial Public Release
