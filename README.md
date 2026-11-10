@@ -22,6 +22,8 @@ Built clean-room following the architectural principles of [mahach666/RvtIO](htt
 - **Wavefront OBJ Exporter**: Streams 3D meshes to `.obj` with 1-based indexing in local or project world coordinates.
 - **Spatial Acceleration Index (BVH)**: Balanced Bounding Volume Hierarchy over all meshes for sub-millisecond range queries (`QueryBox`) and double-precision Möller–Trumbore raycasting (`Raycast`).
 - **Federated Multi-Model Assemblies (.nwf)**: Aggregates multiple discipline models into a unified coordination coordinate system, reads `.nwf` external references, and detects spatial clashes (`FindClashes`).
+- **buildingSMART BCF 2.1 Collaboration**: Pure managed exporter generating standard BIM Collaboration Format (`.bcfzip`) archives with topic folders, `markup.bcf`, viewpoints (`viewpoint.bcfv`), perspective cameras focused on clash centers, and colored component highlights (`IfcGuid`).
+- **Interactive HTML Clash Reports**: Standalone, offline HTML clash detection report with a discipline cross-clash matrix ($M_i \times M_j$ frequency), KPI summary cards, live search/filtering, and sortable clash details table.
 - **Embedded DB Cache**: Decodes the internal `LcOpDBCache` virtual table directory (offsets, sizes, flags).
 
 ---
@@ -97,6 +99,15 @@ nwcio ./BuildingK4/ ./BuildingK4_assembly.glb --report
 
 # Run cross-model geometric clash detection across contributing models
 nwcio ./BuildingK4/ ./BuildingK4_assembly.glb --clashes --report
+
+# Export detected clashes directly to buildingSMART BCF 2.1 zip archive
+nwcio ./BuildingK4/ ./clashes.bcfzip
+
+# Export interactive, self-contained HTML clash report with matrix
+nwcio ./BuildingK4/ ./clash_report.html
+
+# Simultaneous multi-format export
+nwcio ./BuildingK4/ ./assembly.glb --bcf ./clashes.bcfzip --clash-html ./report.html --report
 
 # Inspect Bounding Volume Hierarchy (BVH) spatial index statistics
 nwcio model.nwc model.glb --bvh-stats --report
@@ -181,6 +192,12 @@ foreach (var clash in clashes)
 // Export the aggregated multi-discipline model to a single GLB or IFC file
 assembly.SaveIfc("Campus_Coordination.ifc");
 assembly.SaveGlb("Campus_Coordination.glb");
+
+// Export clashes to standard buildingSMART BCF 2.1 archive (.bcfzip)
+assembly.SaveBcf("Campus_Clashes.bcfzip", clashes);
+
+// Export interactive, standalone HTML clash report with discipline matrix
+assembly.SaveClashReportHtml("Campus_ClashReport.html", clashes);
 ```
 
 ---

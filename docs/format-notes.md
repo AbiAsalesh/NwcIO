@@ -186,3 +186,16 @@ Once inflated, streams serve dedicated roles identified by their signature prefi
   - Element metadata and dimensional bounding parameters exported as `IfcPropertySet` containing `IfcPropertySingleValue` linked to elements via `IfcRelDefinesByProperties`.
 - **Global Identifiers**:
   - Deterministic 22-character buildingSMART base64 GUIDs generated via UUID/SHA-256 namespace hashing (`IfcGuid`), ensuring stable GUIDs across repeated exports.
+
+### 2.12 BIM Collaboration Format (BCF 2.1) & Interactive Clash Reports
+- **BCF 2.1 Container Specification**:
+  - Formatted as a `.bcfzip` PKZip archive complying with buildingSMART BCF 2.1 specification.
+  - Root entry `bcf.version` contains XML version declaration: `<Version VersionId="2.1" DetailedVersion="2.1" />`.
+  - For each detected spatial clash, a GUID folder `{TopicGuid}/` contains:
+    - `markup.bcf`: XML metadata including `<Topic Guid="..." TopicType="Clash" TopicStatus="Active">`, `<Title>`, `<Priority>`, `<CreationAuthor>NwcIO</CreationAuthor>`, `<CreationDate>`, `<Description>` detailing intersecting models and overlap volumes, and link to `<Viewpoints>`.
+    - `viewpoint.bcfv`: XML visualization info including `<Components><Selection>` and `<Coloring>` highlighting element A in rose (`#E11D48`) and element B in azure (`#2563EB`) via buildingSMART 22-character `IfcGuid`, and `<PerspectiveCamera>` automatically aimed at the 3D clash intersection center.
+- **Interactive Offline HTML Clash Reports**:
+  - Standalone HTML document with zero external dependencies (no CDNs, works completely offline in air-gapped environments).
+  - Responsive dark-theme BIM UI with Emerald (`#22C55E`) and Azure (`#3B82F6`) accent branding.
+  - Discipline cross-clash matrix table ($M_i \times M_j$) showing pairwise conflict density across all contributing models, with clickable cell filtering.
+  - Interactive table featuring live search filtering and client-side column sorting by clash index, model names, volumes, and bounding boxes.

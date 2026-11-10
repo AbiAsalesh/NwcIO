@@ -180,16 +180,31 @@ public class RealFixtureTests
             Assert.True(assembly.SpatialIndex.NodeCount > 0);
 
             string tempGlb = Path.Combine(Path.GetTempPath(), $"assembly_{Guid.NewGuid():N}.glb");
+            string tempBcf = Path.Combine(Path.GetTempPath(), $"assembly_{Guid.NewGuid():N}.bcfzip");
+            string tempHtml = Path.Combine(Path.GetTempPath(), $"assembly_{Guid.NewGuid():N}.html");
             try
             {
                 assembly.SaveGlb(tempGlb);
                 Assert.True(File.Exists(tempGlb));
                 var info = new FileInfo(tempGlb);
                 Assert.True(info.Length > 200_000);
+
+                var clashes = assembly.FindClashes();
+                assembly.SaveBcf(tempBcf, clashes);
+                Assert.True(File.Exists(tempBcf));
+                var bcfInfo = new FileInfo(tempBcf);
+                Assert.True(bcfInfo.Length > 50);
+
+                assembly.SaveClashReportHtml(tempHtml, clashes);
+                Assert.True(File.Exists(tempHtml));
+                var htmlInfo = new FileInfo(tempHtml);
+                Assert.True(htmlInfo.Length > 1000);
             }
             finally
             {
                 if (File.Exists(tempGlb)) File.Delete(tempGlb);
+                if (File.Exists(tempBcf)) File.Delete(tempBcf);
+                if (File.Exists(tempHtml)) File.Delete(tempHtml);
             }
         }
     }

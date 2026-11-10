@@ -11,22 +11,24 @@ namespace NwcIO.Cli;
 internal static class Program
 {
     private const string UsageText = """
-        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb|output.ifc] [options]
+        Usage: nwcio <input.nwc|input.nwd|input.nwf|input_dir> [output.json|output.obj|output.glb|output.ifc|output.bcfzip|output.html] [options]
                nwcio --help | --version
 
         Reads Autodesk Navisworks files (.nwc, .nwd, .nwf) or assemblies of models
         and exports scene trees, properties, 3D transforms, materials, and 3D polygon meshes
-        (IFC/GLB/OBJ/JSON) with BVH spatial acceleration, without requiring Navisworks.
+        (IFC/GLB/OBJ/JSON/BCF/HTML) with BVH spatial acceleration, without requiring Navisworks.
 
         Arguments:
           <input>            Path to .nwc, .nwd, .nwf file or a folder of .nwc models.
-          [output]           Destination path for exported file (.json, .obj, .glb, or .ifc).
+          [output]           Destination path for exported file (.json, .obj, .glb, .ifc, .bcfzip, or .html).
                              Default: <input-without-ext>.json (or standard output if '-').
 
         Options:
           --ifc <file.ifc>   Export 3D geometry, materials, and properties to IFC2x3 Coordination View
           --glb <file.glb>   Export 3D geometry and materials to glTF 2.0 Binary format (GLB)
           --obj <file.obj>   Export 3D geometry to Wavefront OBJ format
+          --bcf <file.bcfzip> Export cross-model clashes to buildingSMART BCF 2.1 zip archive
+          --clash-html <file.html> Export interactive HTML clash detection report with matrix
           --local-coords     Export geometry in local coordinate space (default: world coordinates)
           --no-meshes        Disable 3D mesh geometry extraction
           --no-materials     Disable material and surface color extraction
@@ -71,6 +73,8 @@ internal static class Program
         string? explicitObjPath = null;
         string? explicitGlbPath = null;
         string? explicitIfcPath = null;
+        string? explicitBcfPath = null;
+        string? explicitClashHtmlPath = null;
         string? raycastArg = null;
         bool checkClashes = false;
         bool bvhStats = false;
@@ -144,6 +148,22 @@ internal static class Program
                     }
                     explicitGlbPath = args[++i];
                     break;
+                case "--bcf":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --bcf.");
+                        return 1;
+                    }
+                    explicitBcfPath = args[++i];
+                    break;
+                case "--clash-html":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: Missing argument for --clash-html.");
+                        return 1;
+                    }
+                    explicitClashHtmlPath = args[++i];
+                    break;
                 case "--no-indent":
                     indent = false;
                     break;
@@ -199,6 +219,7 @@ internal static class Program
         {
             return ProcessAssemblyDirectory(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
+                explicitBcfPath, explicitClashHtmlPath,
                 worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
         }
 
@@ -207,6 +228,7 @@ internal static class Program
         {
             return ProcessNwfAssembly(
                 inputPath, outputPath, explicitGlbPath, explicitObjPath, explicitIfcPath,
+                explicitBcfPath, explicitClashHtmlPath,
                 worldCoords, checkClashes, bvhStats, raycastArg, printReport, indent, sw);
         }
 
@@ -241,10 +263,25 @@ internal static class Program
         bool outputIsIfc = outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase);
         bool outputIsObj = outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase);
         bool outputIsGlb = outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
+        bool outputIsBcf = outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase);
+        bool outputIsHtml = outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+
+        NwcAssembly? singleAssembly = null;
+        NwcAssembly GetSingleAssembly() => singleAssembly ??= NwcAssembly.Create(Path.GetFileNameWithoutExtension(inputPath), doc);
 
         try
         {
-            if (outputIsIfc)
+            if (outputIsBcf)
+            {
+                EnsureParentDirectory(outputPath);
+                GetSingleAssembly().SaveBcf(outputPath);
+            }
+            else if (outputIsHtml)
+            {
+                EnsureParentDirectory(outputPath);
+                GetSingleAssembly().SaveClashReportHtml(outputPath);
+            }
+            else if (outputIsIfc)
             {
                 EnsureParentDirectory(outputPath);
                 doc.SaveIfc(outputPath);
@@ -299,6 +336,18 @@ internal static class Program
             {
                 EnsureParentDirectory(explicitObjPath);
                 doc.SaveObj(explicitObjPath, worldCoords);
+            }
+
+            if (!string.IsNullOrEmpty(explicitBcfPath))
+            {
+                EnsureParentDirectory(explicitBcfPath);
+                GetSingleAssembly().SaveBcf(explicitBcfPath);
+            }
+
+            if (!string.IsNullOrEmpty(explicitClashHtmlPath))
+            {
+                EnsureParentDirectory(explicitClashHtmlPath);
+                GetSingleAssembly().SaveClashReportHtml(explicitClashHtmlPath);
             }
         }
         catch (Exception ex)
@@ -366,6 +415,8 @@ internal static class Program
         string? explicitGlbPath,
         string? explicitObjPath,
         string? explicitIfcPath,
+        string? explicitBcfPath,
+        string? explicitClashHtmlPath,
         bool worldCoords,
         bool checkClashes,
         bool bvhStats,
@@ -378,36 +429,60 @@ internal static class Program
 
         var assembly = NwcAssembly.LoadFromDirectory(dirPath);
 
-        if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        IReadOnlyList<NwcClash>? clashes = null;
+        bool needClashes = checkClashes ||
+            !string.IsNullOrEmpty(explicitBcfPath) ||
+            !string.IsNullOrEmpty(explicitClashHtmlPath) ||
+            outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+
+        if (needClashes)
         {
+            clashes = assembly.FindClashes();
+        }
+
+        if (outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            assembly.SaveBcf(outputPath, clashes);
+        }
+        else if (outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            assembly.SaveClashReportHtml(outputPath, clashes);
+        }
+        else if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
             assembly.SaveIfc(outputPath);
         }
         else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveGlb(outputPath, worldCoords);
         }
         else if (outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase))
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveObj(outputPath, worldCoords);
         }
         else
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
-        if (!string.IsNullOrEmpty(explicitIfcPath)) assembly.SaveIfc(explicitIfcPath);
-        if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
-        if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
+        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath); }
+        if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
+        if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
+        if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
+        if (!string.IsNullOrEmpty(explicitClashHtmlPath)) { EnsureParentDirectory(explicitClashHtmlPath); assembly.SaveClashReportHtml(explicitClashHtmlPath, clashes); }
 
         if (!string.IsNullOrEmpty(raycastArg))
         {
             ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
-        }
-
-        IReadOnlyList<NwcClash>? clashes = null;
-        if (checkClashes)
-        {
-            clashes = assembly.FindClashes();
         }
 
         sw.Stop();
@@ -447,6 +522,8 @@ internal static class Program
         string? explicitGlbPath,
         string? explicitObjPath,
         string? explicitIfcPath,
+        string? explicitBcfPath,
+        string? explicitClashHtmlPath,
         bool worldCoords,
         bool checkClashes,
         bool bvhStats,
@@ -458,36 +535,60 @@ internal static class Program
         outputPath ??= Path.ChangeExtension(nwfPath, ".glb");
         var assembly = NwcAssembly.OpenNwf(nwfPath);
 
-        if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        IReadOnlyList<NwcClash>? clashes = null;
+        bool needClashes = checkClashes ||
+            !string.IsNullOrEmpty(explicitBcfPath) ||
+            !string.IsNullOrEmpty(explicitClashHtmlPath) ||
+            outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+            outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+
+        if (needClashes)
         {
+            clashes = assembly.FindClashes();
+        }
+
+        if (outputPath.EndsWith(".bcf", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".bcfzip", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            assembly.SaveBcf(outputPath, clashes);
+        }
+        else if (outputPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
+            assembly.SaveClashReportHtml(outputPath, clashes);
+        }
+        else if (outputPath.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureParentDirectory(outputPath);
             assembly.SaveIfc(outputPath);
         }
         else if (outputPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveGlb(outputPath, worldCoords);
         }
         else if (outputPath.EndsWith(".obj", StringComparison.OrdinalIgnoreCase))
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveObj(outputPath, worldCoords);
         }
         else
         {
+            EnsureParentDirectory(outputPath);
             assembly.SaveJson(outputPath, new NwcJsonExportOptions { Indented = indent });
         }
 
-        if (!string.IsNullOrEmpty(explicitIfcPath)) assembly.SaveIfc(explicitIfcPath);
-        if (!string.IsNullOrEmpty(explicitGlbPath)) assembly.SaveGlb(explicitGlbPath, worldCoords);
-        if (!string.IsNullOrEmpty(explicitObjPath)) assembly.SaveObj(explicitObjPath, worldCoords);
+        if (!string.IsNullOrEmpty(explicitIfcPath)) { EnsureParentDirectory(explicitIfcPath); assembly.SaveIfc(explicitIfcPath); }
+        if (!string.IsNullOrEmpty(explicitGlbPath)) { EnsureParentDirectory(explicitGlbPath); assembly.SaveGlb(explicitGlbPath, worldCoords); }
+        if (!string.IsNullOrEmpty(explicitObjPath)) { EnsureParentDirectory(explicitObjPath); assembly.SaveObj(explicitObjPath, worldCoords); }
+        if (!string.IsNullOrEmpty(explicitBcfPath)) { EnsureParentDirectory(explicitBcfPath); assembly.SaveBcf(explicitBcfPath, clashes); }
+        if (!string.IsNullOrEmpty(explicitClashHtmlPath)) { EnsureParentDirectory(explicitClashHtmlPath); assembly.SaveClashReportHtml(explicitClashHtmlPath, clashes); }
 
         if (!string.IsNullOrEmpty(raycastArg))
         {
             ExecuteRaycastTest(assembly.SpatialIndex, raycastArg);
-        }
-
-        IReadOnlyList<NwcClash>? clashes = null;
-        if (checkClashes)
-        {
-            clashes = assembly.FindClashes();
         }
 
         sw.Stop();

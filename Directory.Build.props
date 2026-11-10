@@ -24,7 +24,7 @@
     <PackageProjectUrl>https://github.com/IOExtend/NwcIO</PackageProjectUrl>
     <RepositoryUrl>https://github.com/IOExtend/NwcIO</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>navisworks;nwc;nwd;nwf;ifc;bim;glb;gltf;obj;mesh;spatial-index;bvh</PackageTags>
+    <PackageTags>navisworks;nwc;nwd;nwf;ifc;bcf;bcfzip;clash-detection;bim;glb;gltf;obj;mesh;spatial-index;bvh</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>

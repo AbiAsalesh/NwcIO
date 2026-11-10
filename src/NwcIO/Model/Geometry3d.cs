@@ -77,6 +77,8 @@ public readonly record struct BoundingBox3d(Vector3d Min, Vector3d Max)
 
     public Vector3d Size => new(Max.X - Min.X, Max.Y - Min.Y, Max.Z - Min.Z);
 
+    public double Volume => IsEmpty ? 0.0 : Math.Max(0.0, Size.X) * Math.Max(0.0, Size.Y) * Math.Max(0.0, Size.Z);
+
     public bool Contains(Vector3d point) =>
         point.X >= Min.X && point.X <= Max.X &&
         point.Y >= Min.Y && point.Y <= Max.Y &&

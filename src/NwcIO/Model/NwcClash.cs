@@ -1,3 +1,5 @@
+using NwcIO.Internal.Export;
+
 namespace NwcIO.Model;
 
 /// <summary>
@@ -14,4 +16,29 @@ public sealed record NwcClash(
     NwcMesh MeshA,
     NwcDocument ModelB,
     NwcMesh MeshB,
-    BoundingBox3d IntersectionBox);
+    BoundingBox3d IntersectionBox)
+{
+    /// <summary>Gets the unique identifier of this clash instance.</summary>
+    public Guid Id { get; init; } = Guid.NewGuid();
+
+    /// <summary>Gets the volume of the intersection bounding box in cubic units.</summary>
+    public double Volume => IntersectionBox.Volume;
+
+    /// <summary>Gets the geometric center of the clash intersection box.</summary>
+    public Vector3d Center => IntersectionBox.Center;
+
+    /// <summary>Gets the 22-character buildingSMART IFC GlobalId of the first clashing element.</summary>
+    public string IfcGuidA => IfcGuid.FromElementId(MeshA.Id, "NwcMesh");
+
+    /// <summary>Gets the 22-character buildingSMART IFC GlobalId of the second clashing element.</summary>
+    public string IfcGuidB => IfcGuid.FromElementId(MeshB.Id, "NwcMesh");
+
+    /// <summary>Display name of ModelA.</summary>
+    public string ModelAName => Path.GetFileNameWithoutExtension(ModelA.FileInfo.SourcePath ?? "ModelA");
+
+    /// <summary>Display name of ModelB.</summary>
+    public string ModelBName => Path.GetFileNameWithoutExtension(ModelB.FileInfo.SourcePath ?? "ModelB");
+
+    /// <summary>Gets a human-readable display title for this clash.</summary>
+    public string Title => FormattableString.Invariant($"Clash between {ModelAName} (#{MeshA.Id}) and {ModelBName} (#{MeshB.Id})");
+}

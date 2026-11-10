@@ -266,6 +266,46 @@ public sealed class NwcAssembly
         IfcExporter.WriteAssembly(this, writer, options);
     }
 
+    /// <summary>
+    /// Exports detected clashes across models in the assembly to a standard buildingSMART BCF 2.1 zip archive (.bcfzip).
+    /// </summary>
+    /// <param name="path">Destination .bcf or .bcfzip file path.</param>
+    /// <param name="clashes">Optional pre-computed clash list; if null, <see cref="FindClashes"/> is evaluated.</param>
+    public void SaveBcf(string path, IReadOnlyList<NwcClash>? clashes = null)
+    {
+        clashes ??= FindClashes();
+        BcfExporter.WriteFile(clashes, path, Name);
+    }
+
+    /// <summary>
+    /// Exports detected clashes across models in the assembly to a standard buildingSMART BCF 2.1 zip stream.
+    /// </summary>
+    public void SaveBcf(Stream stream, IReadOnlyList<NwcClash>? clashes = null)
+    {
+        clashes ??= FindClashes();
+        BcfExporter.Write(clashes, stream, Name);
+    }
+
+    /// <summary>
+    /// Exports an interactive, self-contained HTML clash detection report with a discipline clash matrix and filterable clash table.
+    /// </summary>
+    /// <param name="path">Destination .html file path.</param>
+    /// <param name="clashes">Optional pre-computed clash list; if null, <see cref="FindClashes"/> is evaluated.</param>
+    public void SaveClashReportHtml(string path, IReadOnlyList<NwcClash>? clashes = null)
+    {
+        clashes ??= FindClashes();
+        HtmlClashReportExporter.WriteFile(clashes, path, Name, Models.Count, AllMeshes.Count);
+    }
+
+    /// <summary>
+    /// Exports an interactive, self-contained HTML clash detection report to a <see cref="TextWriter"/>.
+    /// </summary>
+    public void SaveClashReportHtml(TextWriter writer, IReadOnlyList<NwcClash>? clashes = null)
+    {
+        clashes ??= FindClashes();
+        HtmlClashReportExporter.Write(clashes, writer, Name, Models.Count, AllMeshes.Count);
+    }
+
     /// <summary>Exports a structured summary of the federated assembly to a JSON file.</summary>
     public void SaveJson(string path, NwcJsonExportOptions? options = null)
     {
