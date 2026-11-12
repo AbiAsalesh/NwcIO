@@ -112,18 +112,19 @@ NwcHtmlViewerExporter.Export(doc, "interactive_site.html", new NwcHtmlViewerOpti
 Run standard coordination and export tasks from your terminal or CI/CD pipelines:
 
 ```bash
-# Inspect scene graph and metadata
-nwcio info model.nwc
+# Export scene hierarchy and properties to JSON
+nwcio model.nwc model.json
 
 # Export to IFC4 and glTF
-nwcio export model.nwc --ifc model.ifc --glb model.glb
+nwcio model.nwc model.ifc --ifc-schema IFC4
+nwcio model.nwc model.glb
 
 # Multi-discipline clash matrix
-nwcio matrix ARCH.nwc STRUCT.nwc MEP.nwc --out-json matrix.json --bcf matrix.bcfzip
+nwcio ./models --clash-matrix matrix.json --clash-matrix-bcf matrix.bcfzip
 
 # 4D TimeLiner linking & simulation
-nwcio timeliner model.nwc --schedule schedule.xml --link auto --export-csv sim.csv
+nwcio model.nwc --timeliner-xml schedule.xml --link-timeliner --timeliner-csv sim.csv
 
 # Standalone 3D HTML WebGL viewer
-nwcio view model.nwc --output viewer.html --timeliner --selection-sets
+nwcio model.nwc --html-viewer viewer.html
 ```
