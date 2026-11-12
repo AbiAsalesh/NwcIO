@@ -45,7 +45,7 @@ Export to IFC, glTF GLB, Wavefront OBJ, or JSON:
 
 ```sh
 # Convert to IFC2X3 or modern compact IFC4
-nwcio model.nwc model.ifc --ifc4
+nwcio model.nwc model.ifc --ifc-schema IFC4
 
 # Convert to binary glTF 2.0 (with PBR materials and vertex normals)
 nwcio model.nwc model.glb
@@ -61,26 +61,26 @@ Coordinate models, detect clashes, and export BCF:
 
 ```sh
 # Run clash detection between models and export buildingSMART BCF 2.1
-nwcio clash arch.nwc mep.nwc --bcf clashes.bcfzip --tolerance 0.01
+nwcio ./models --clash-bcf clashes.bcfzip --clash-tolerance 0.01
 
 # Execute multi-discipline clash matrix across a federated folder
-nwcio clash-matrix ./models/ -o matrix.json --export-markdown matrix.md --bcf matrix.bcfzip
+nwcio ./models --clash-matrix matrix.json --clash-matrix-md matrix.md --clash-matrix-bcf matrix.bcfzip
 
 # Export standalone 3D WebGL HTML viewer with sectioning and measure tools
-nwcio view model.nwc -o viewer.html --grids grids.xml
+nwcio model.nwc --html-viewer viewer.html --grids grids.xml
 ```
 
 TimeLiner, viewpoints, search sets, and revision diff:
 
 ```sh
 # Simulate 4D construction schedule at a specific date
-nwcio schedule model.nwc --sim-date 2026-06-01 --export-csv schedule.csv
+nwcio model.nwc --timeliner-xml schedule.xml --link-timeliner --timeliner-simulate 2026-06-01 --timeliner-csv schedule.csv
 
 # Export saved viewpoints and section planes to BCF 2.1 or Navisworks XML
-nwcio export-viewpoints model.nwc --bcf viewpoints.bcfzip --xml viewpoints.xml
+nwcio model.nwc --viewpoints-bcf viewpoints.bcfzip --viewpoints-xml viewpoints.xml
 
 # Compare two model revisions (added, deleted, modified geometry & properties)
-nwcio diff baseline.nwc revision.nwc -o diff.json --bcf diff.bcfzip
+nwcio revision.nwc --diff baseline.nwc --diff-json diff.json --diff-bcf diff.bcfzip
 ```
 
 Diagnostics and progress go to standard error. Run `nwcio --help` for the full list of options.
